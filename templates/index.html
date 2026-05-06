@@ -125,7 +125,7 @@
         {% if user.role == 'admin' %}
         <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
         {% endif %}
-        {% if user.role in ('nurse', 'admin') %}
+        {% if user.role in ('doctor', 'admin') %}
         <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
         {% endif %}
         {% if user.role == 'admin' %}
