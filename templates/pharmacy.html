@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BedSwift — Pharmacy Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          keyframes: {
+            'fade-in': { '0%': { opacity:'0', transform:'translateY(8px)' }, '100%': { opacity:'1', transform:'translateY(0)' } },
+            'pulse-dot': { '0%,100%': { opacity:'1' }, '50%': { opacity:'0.35' } },
+          },
+          animation: {
+            'fade-in': 'fade-in 0.3s ease-out forwards',
+            'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { height: 100%; }
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; overflow-x: hidden; }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; border-radius: 10px;
+      color: #64748b; font-size: .875rem; font-weight: 500;
+      transition: all .15s; text-decoration: none;
+    }
+    .sidebar-link:hover  { background: #f1f5f9; color: #1e293b; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+
+    .section-label { font-size:.7rem; font-weight:700; color:#94a3b8;
+                     text-transform:uppercase; letter-spacing:.08em; }
+
+    /* ── Status badge colours ────────────────────────────────────── */
+    .badge {
+      font-size: .65rem; font-weight: 700; padding: 2px 9px;
+      border-radius: 999px; border: 1px solid; white-space: nowrap;
+    }
+    .badge-pending  { background:#f1f5f9; color:#64748b;  border-color:#cbd5e1; }
+    .badge-prep     { background:#eff6ff; color:#2563eb;  border-color:#93c5fd; }
+    .badge-ready    { background:#fefce8; color:#ca8a04;  border-color:#fcd34d; }
+    .badge-collected{ background:#f0fdf4; color:#16a34a;  border-color:#86efac; }
+    .badge-discharged { background:#f0fdf4; color:#15803d; border-color:#86efac; }
+    .badge-readyfinal { background:#faf5ff; color:#7c3aed; border-color:#c4b5fd; }
+    .badge-pharmpending{ background:#fff7ed; color:#c2410c; border-color:#fdba74; }
+
+    /* ── Responsive sidebar ─────────────────────────────────── */
+    @media (max-width: 767px) {
+      #sidebar { transition: transform .28s cubic-bezier(.4,0,.2,1); }
+      #sidebar { transform: translateX(-100%); }
+      #sidebar.open { transform: translateX(0); }
+    }
+    @media (min-width: 768px) {
+      #sidebar { transform: translateX(0); }
+    }
+    #sidebar-overlay {
+      display: none; position: fixed; inset: 0; z-index: 19;
+      background: rgba(0,0,0,.35); backdrop-filter: blur(1px);
+    }
+    #sidebar-overlay.open { display: block; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+
+<body class="min-h-screen flex">
+
+  <div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- ═══════════  SIDEBAR  ═══════════ -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 flex h-[100svh] w-60 max-h-[100dvh] flex-col overflow-hidden overscroll-y-contain bg-white border-r border-gray-100 shadow-sm">
+
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-base">🏥</div>
+        <div>
+          <p class="font-bold text-gray-900 text-sm leading-none">BedSwift</p>
+          <p class="text-xs text-gray-400 mt-0.5">Pharmacy</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        {% set role_colors = {
+          'doctor':   'bg-slate-800',
+          'nurse':    'bg-emerald-600',
+          'admin':    'bg-indigo-600',
+          'pharmacy': 'bg-cyan-600'
+        } %}
+        <div class="w-9 h-9 rounded-full {{ role_colors.get(user.role, 'bg-slate-700') }} flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
+          {{ user.initials }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 leading-tight">{{ user.full_name }}</p>
+          <p class="text-xs text-gray-400 capitalize mt-0.5">{{ user.role }}</p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 min-h-0 px-3 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+      {% if user.role == 'admin' %}
+      <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
+      {% endif %}
+      <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
+      {% if user.role == 'admin' %}
+      <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
+      {% endif %}
+      {% if user.role == 'admin' %}
+      <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
+      {% endif %}
+      <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
+    </nav>
+
+    <div class="flex-shrink-0 px-4 py-4 border-t border-gray-100 space-y-2">
+      <div class="flex items-center gap-2 text-xs text-gray-400 px-1">
+        <span id="live-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0"></span>
+        <span>Connected · TiDB Live</span>
+      </div>
+      <form method="post" action="/logout">
+        <button type="submit" class="sidebar-link w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600">
+          <span>🚪</span> Sign Out
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ═══════════  MAIN  ═══════════ -->
+  <main class="md:ml-60 flex-1 flex flex-col min-h-screen">
+
+    <!-- Top bar -->
+    <header class="bg-white border-b border-gray-100 px-4 sm:px-8 py-3.5 sticky top-0 z-10 shadow-sm flex items-center justify-between">
+      <button onclick="toggleSidebar()" class="md:hidden mr-3 p-2 rounded-lg hover:bg-gray-100 text-gray-500 flex-shrink-0" aria-label="Open menu">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm sm:text-base font-bold text-gray-900 truncate">Pharmacy Dashboard</h1>
+        <p class="text-xs text-gray-400 mt-0.5 hidden sm:block">Medication order queue · BedSwift</p>
+      </div>
+      <div class="flex items-center gap-2 ml-2">
+        <span id="refresh-icon" class="text-gray-400 text-sm hidden sm:inline">🔄</span>
+        <button onclick="loadQueue()"
+          class="flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 text-xs font-semibold px-3.5 py-2 rounded-lg border border-gray-200 transition-colors">
+          <span class="sm:hidden">🔄</span><span class="hidden sm:inline">Refresh</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 px-4 sm:px-8 py-4 sm:py-6 space-y-5 overflow-y-auto">
+
+      <!-- Filter tabs -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <button onclick="setFilter('all')"       id="tab-all"       class="tab-btn active-tab text-xs font-semibold px-4 py-2 rounded-lg border transition-colors">All Orders</button>
+        <button onclick="setFilter('pending')"   id="tab-pending"   class="tab-btn text-xs font-semibold px-4 py-2 rounded-lg border transition-colors">⏳ Pending</button>
+        <button onclick="setFilter('preparing')" id="tab-preparing" class="tab-btn text-xs font-semibold px-4 py-2 rounded-lg border transition-colors">🔵 Preparing</button>
+        <button onclick="setFilter('ready')"     id="tab-ready"     class="tab-btn text-xs font-semibold px-4 py-2 rounded-lg border transition-colors">🟡 Ready</button>
+        <button onclick="setFilter('collected')" id="tab-collected" class="tab-btn text-xs font-semibold px-4 py-2 rounded-lg border transition-colors">✅ Collected</button>
+      </div>
+
+      <!-- Queue container -->
+      <div id="queue-container" class="space-y-4">
+        <div class="bg-white border border-gray-100 rounded-xl p-8 text-center shadow-sm">
+          <p class="text-gray-400 text-sm">Loading pharmacy queue…</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <style>
+    .tab-btn        { background:#fff; color:#64748b; border-color:#e2e8f0; }
+    .tab-btn:hover  { background:#f8fafc; color:#334155; border-color:#cbd5e1; }
+    .active-tab     { background:#2563eb !important; color:#fff !important; border-color:#2563eb !important; }
+  </style>
+
+  <script>
+    let _allRecords = [];
+    let _activeFilter = 'all';
+
+    // ── Load queue ────────────────────────────────────────────────────────────
+    async function loadQueue() {
+      document.getElementById('refresh-icon').textContent = '⏳';
+      try {
+        const res  = await fetch('/api/pharmacy-queue');
+        const data = await res.json();
+        _allRecords = Array.isArray(data) ? data : [];
+        renderQueue();
+      } catch (e) {
+        document.getElementById('queue-container').innerHTML =
+          '<div class="bg-red-50 border border-red-200 rounded-xl p-6 text-center"><p class="text-red-600 text-sm font-medium">Failed to load pharmacy queue.</p></div>';
+      } finally {
+        document.getElementById('refresh-icon').textContent = '🔄';
+      }
+    }
+
+    // ── Filter ────────────────────────────────────────────────────────────────
+    function setFilter(f) {
+      _activeFilter = f;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active-tab'));
+      document.getElementById('tab-' + f).classList.add('active-tab');
+      renderQueue();
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+    function renderQueue() {
+      let records = _allRecords;
+      if (_activeFilter !== 'all') {
+        const map = { pending:'Pending', preparing:'Preparing',
+                      ready:'Ready for Collection', collected:'Collected' };
+        const target = map[_activeFilter] || '';
+        records = _allRecords.filter(r => r.pharmacy_status === target);
+      }
+
+      if (!records.length) {
+        document.getElementById('queue-container').innerHTML =
+          `<div class="bg-white border border-gray-100 rounded-xl p-10 text-center shadow-sm">
+            <p class="text-4xl mb-3">💊</p>
+            <p class="text-gray-500 text-sm font-medium">No orders in this queue.</p>
+           </div>`;
+        return;
+      }
+
+      document.getElementById('queue-container').innerHTML =
+        records.map(r => renderCard(r)).join('');
+    }
+
+    // ── Status badge HTML ─────────────────────────────────────────────────────
+    function pharmBadge(s) {
+      const cls = {
+        'Pending':              'badge-pharmpending',
+        'Preparing':            'badge-prep',
+        'Ready for Collection': 'badge-ready',
+        'Collected':            'badge-collected',
+      }[s] || 'badge-pending';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
+    function dsBadge(s) {
+      const cls = {
+        'Pending Pharmacy':       'badge-pharmpending',
+        'Ready for Final Discharge': 'badge-readyfinal',
+        'Discharged':             'badge-discharged',
+      }[s] || 'badge-pending';
+      return `<span class="badge ${cls}">${s}</span>`;
+    }
+
+    // ── Action buttons for pharmacy_status ───────────────────────────────────
+    function pharmActions(r) {
+      const id  = r.id;
+      const ps  = r.pharmacy_status;
+      const map = {
+        'Pending':              `<button onclick="updatePharm(${id},'Preparing')"           class="action-btn bg-blue-600 hover:bg-blue-700 text-white">▶ Start Preparing</button>`,
+        'Preparing':            `<button onclick="updatePharm(${id},'Ready for Collection')" class="action-btn bg-amber-500 hover:bg-amber-600 text-white">✓ Mark Ready</button>`,
+        'Ready for Collection': `<button onclick="updatePharm(${id},'Collected')"            class="action-btn bg-emerald-600 hover:bg-emerald-700 text-white">✓ Mark Collected</button>`,
+        'Collected':            `<span class="text-xs text-emerald-600 font-semibold">✓ Collected</span>`,
+      };
+      return map[ps] || '';
+    }
+
+    // ── Render single card ────────────────────────────────────────────────────
+    function renderCard(r) {
+      const meds = r.medications.length
+        ? r.medications.map(m => `<li class="text-xs text-gray-600 list-disc ml-4 leading-snug">${m}</li>`).join('')
+        : '<li class="text-xs text-gray-400 ml-4">No medications listed</li>';
+
+      return `
+        <div class="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden animate-fade-in">
+          <!-- Card header -->
+          <div class="px-5 py-3.5 flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50">
+            <div class="flex items-center gap-3">
+              <span class="text-lg">💊</span>
+              <div>
+                <p class="font-bold text-gray-900 text-sm">${r.patient_id}</p>
+                <p class="text-xs text-gray-400">${r.patient_name} · Bed <strong>${r.bed_id}</strong> · ${r.ward}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${pharmBadge(r.pharmacy_status)}
+              ${dsBadge(r.discharge_status)}
+            </div>
+          </div>
+          <!-- Card body -->
+          <div class="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Medications -->
+            <div>
+              <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">Medications Ordered</p>
+              <ul class="space-y-1">${meds}</ul>
+            </div>
+            <!-- Status & actions -->
+            <div class="space-y-3">
+              <div>
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Doctor / MO</p>
+                <p class="text-sm font-semibold text-gray-700">${r.mo_name}</p>
+              </div>
+              <div>
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Prescribed</p>
+                <p class="text-xs text-gray-500">${r.discharged_at}</p>
+              </div>
+              <div class="pt-1">
+                ${pharmActions(r)}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ── API calls ─────────────────────────────────────────────────────────────
+    async function updatePharm(id, status) {
+      try {
+        const res = await fetch(`/api/pharmacy-records/${id}/pharmacy-status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+        if (res.ok) { await loadQueue(); }
+        else        { alert(`Failed: ${(await res.json()).detail}`); }
+      } catch (e) { alert('Network error: ' + e.message); }
+    }
+
+    // ── Sidebar toggle ────────────────────────────────────────────────────────
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('open');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
+    }
+    document.querySelectorAll('#sidebar a, #sidebar button[type="submit"]')
+      .forEach(el => el.addEventListener('click', () => {
+        if (window.innerWidth < 768) closeSidebar();
+      }));
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadQueue();
+    setInterval(loadQueue, 30000);
+  </script>
+
+  <style>
+    .action-btn {
+      font-size: .75rem; font-weight: 700; padding: 6px 14px;
+      border-radius: 8px; transition: all .15s; cursor: pointer; border: none;
+    }
+  </style>
+
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BedSwift — Sign In</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } };</script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .field-input {
+      width:100%; background:#f8fafc; border:1.5px solid #e2e8f0; color:#1e293b;
+      border-radius:10px; padding:11px 14px; font-size:.9rem; outline:none;
+      transition:border-color .15s, box-shadow .15s;
+    }
+    .field-input:focus { border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.1); background:#fff; }
+    .field-input::placeholder { color:#94a3b8; }
+    ::-webkit-scrollbar { width:4px; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
+  </style>
+</head>
+
+<body class="bg-slate-50 min-h-screen flex items-center justify-center px-4">
+
+  <div class="w-full max-w-sm">
+
+    <!-- Logo -->
+    <div class="text-center mb-8">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-blue-600 mb-4 shadow-lg shadow-blue-200">
+        <span class="text-2xl">🏥</span>
+      </div>
+      <h1 class="text-2xl font-extrabold text-gray-900">BedSwift</h1>
+      <p class="text-gray-400 text-sm mt-1">Hospital Bed Management System</p>
+    </div>
+
+    <!-- Card -->
+    <div class="bg-white border border-gray-100 rounded-2xl p-8 shadow-lg shadow-gray-100/80">
+
+      <h2 class="text-base font-bold text-gray-900 mb-1">Sign In</h2>
+      <p class="text-gray-400 text-sm mb-6">Enter your credentials to continue.</p>
+
+      {% if error %}
+      <div class="mb-5 flex items-center gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+        <span class="text-red-400 text-base flex-shrink-0">⚠️</span>
+        <p class="text-red-600 text-sm font-medium">{{ error }}</p>
+      </div>
+      {% endif %}
+
+      <form method="post" action="/login" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Username</label>
+          <input name="username" type="text" class="field-input"
+            placeholder="Enter your username" autocomplete="username" required />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Password</label>
+          <input name="password" type="password" class="field-input"
+            placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+        <button type="submit"
+          class="w-full mt-1 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+                 text-white font-bold py-3 text-sm
+                 shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400">
+          Sign In →
+        </button>
+      </form>
+
+    </div>
+
+    <!-- Collapsible demo accounts -->
+    <div class="mt-4">
+      <button type="button" onclick="toggleDemo()"
+        class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl
+               text-xs font-semibold text-gray-400 hover:text-gray-600
+               hover:bg-white border border-transparent hover:border-gray-200
+               transition-all duration-150">
+        <span class="uppercase tracking-wide">Demo accounts</span>
+        <span id="demo-chev" class="transition-transform duration-200 text-sm">▾</span>
+      </button>
+
+      <div id="demo-panel" class="hidden mt-1 bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+        <div class="px-4 pt-3 pb-1">
+          <p class="text-xs text-gray-400 mb-3">Click a row to fill credentials automatically.</p>
+        </div>
+        <div class="divide-y divide-gray-50">
+          <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+               onclick="fill('nurse1','nurse123')">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center text-base">🩺</div>
+              <div>
+                <p class="text-sm font-semibold text-gray-800">Ward Nurse</p>
+                <p class="text-xs text-gray-400 font-mono">nurse1</p>
+              </div>
+            </div>
+            <span class="text-xs text-blue-500 font-medium">Fill ↗</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+               onclick="fill('dr.ahmad','doctor123')">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-base">👨‍⚕️</div>
+              <div>
+                <p class="text-sm font-semibold text-gray-800">Doctor</p>
+                <p class="text-xs text-gray-400 font-mono">dr.ahmad</p>
+              </div>
+            </div>
+            <span class="text-xs text-blue-500 font-medium">Fill ↗</span>
+          </div>
+          <div class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+               onclick="fill('admin','admin123')">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-base">⚙️</div>
+              <div>
+                <p class="text-sm font-semibold text-gray-800">Administrator</p>
+                <p class="text-xs text-gray-400 font-mono">admin</p>
+              </div>
+            </div>
+            <span class="text-xs text-blue-500 font-medium">Fill ↗</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-gray-300 mt-6">
+      BedSwift v1.0 &nbsp;·&nbsp; TiDB Cloud &nbsp;·&nbsp; Groq &nbsp;·&nbsp; Gemini
+    </p>
+
+  </div>
+
+  <script>
+    function fill(u, p) {
+      document.querySelector('input[name="username"]').value = u;
+      document.querySelector('input[name="password"]').value = p;
+      document.querySelector('input[name="username"]').focus();
+    }
+    function toggleDemo() {
+      const panel = document.getElementById('demo-panel');
+      const chev  = document.getElementById('demo-chev');
+      const open  = !panel.classList.contains('hidden');
+      panel.classList.toggle('hidden', open);
+      chev.style.transform = open ? '' : 'rotate(180deg)';
+    }
+  </script>
+
+</body>
+</html>

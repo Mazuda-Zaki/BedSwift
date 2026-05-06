@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BedSwift — Discharge Records</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          keyframes: {
+            'fade-in': { '0%': { opacity: '0', transform: 'translateY(8px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+            'pulse-dot': { '0%,100%': { opacity: '1' }, '50%': { opacity: '0.35' } },
+          },
+          animation: {
+            'fade-in': 'fade-in 0.3s ease-out forwards',
+            'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { height: 100%; }
+    body { font-family: 'Inter', sans-serif; overflow-x: hidden; }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; border-radius: 10px;
+      color: #64748b; font-size: .875rem; font-weight: 500;
+      transition: all .15s; text-decoration: none;
+    }
+    .sidebar-link:hover  { background: #f1f5f9; color: #1e293b; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+
+    .section-label { font-size: .75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+  <!-- ═══════════  SIDEBAR  ═══════════ -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 flex h-[100svh] w-60 max-h-[100dvh] flex-col overflow-hidden overscroll-y-contain bg-white shadow-sm shadow-slate-200/50">
+    <!-- Logo -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-slate-100/80">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-base shadow-sm">🏥</div>
+        <div>
+          <p class="font-bold text-slate-900 text-sm leading-none">BedSwift</p>
+          <p class="text-xs text-slate-500 mt-0.5">Ward Operations</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- User info -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-slate-100/80">
+      <div class="flex items-center gap-3">
+        {% set role_colors = {
+          'doctor':   'bg-slate-800',
+          'nurse':    'bg-emerald-600',
+          'admin':    'bg-indigo-600',
+          'pharmacy': 'bg-cyan-600'
+        } %}
+        <div class="w-9 h-9 rounded-full {{ role_colors.get(user.role, 'bg-slate-700') }} flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
+          {{ user.initials }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-slate-900 leading-tight">{{ user.full_name }}</p>
+          <p class="text-xs text-slate-500 capitalize mt-0.5">{{ user.role }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 min-h-0 px-3 py-3 flex flex-col overflow-y-auto overflow-x-hidden">
+      <div class="space-y-0.5">
+        {% if user.role in ('nurse', 'admin') %}
+        <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
+        {% endif %}
+        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
+        {% if user.role in ('doctor', 'admin') %}
+        <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
+        {% endif %}
+        {% if user.role in ('doctor', 'admin', 'nurse') %}
+        <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
+        {% endif %}
+        {% if user.role in ('pharmacy', 'admin') %}
+        <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
+        {% endif %}
+      </div>
+    </nav>
+
+    <!-- Status + logout -->
+    <div class="flex-shrink-0 px-4 py-4 border-t border-slate-100/80 space-y-2">
+      <div class="flex items-center gap-2 text-xs text-slate-500 px-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0"></span>
+        <span>Connected · TiDB Live</span>
+      </div>
+      <form method="post" action="/logout">
+        <button type="submit" class="sidebar-link w-full text-left text-rose-600 hover:bg-rose-50 hover:text-rose-700">
+          <span>🚪</span> Sign Out
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ═══════════  MAIN  ═══════════ -->
+  <main class="md:ml-60 flex-1 flex flex-col min-h-screen bg-slate-50">
+
+    <!-- Top bar -->
+    <header class="bg-white/90 backdrop-blur-md border-b border-slate-100/80 px-6 sm:px-10 py-4 flex items-center justify-between sticky top-0 z-10 shadow-sm shadow-slate-200/40">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Discharge Records</h1>
+        <p class="text-xs text-slate-500 mt-0.5 hidden sm:block">Full audit trail — all discharged patients · latest first</p>
+      </div>
+      <div class="flex items-center gap-2 sm:gap-3 ml-2">
+        <button onclick="loadRecords()"
+          class="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm ring-1 ring-slate-200/60 transition-colors">
+          <span id="refresh-icon">🔄</span> <span class="hidden sm:inline">Refresh</span>
+        </button>
+        {% if user.role in ('doctor', 'admin') %}
+        <a href="/discharge-portal"
+          class="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md transition-colors">
+          + New Discharge
+        </a>
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- Page body -->
+    <div class="flex-1 px-4 sm:px-10 py-6 sm:py-8">
+
+      <!-- Search + filter bar -->
+      <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 px-5 py-4 mb-5 flex flex-wrap gap-3 items-center">
+        <input id="search-input" type="text" placeholder="🔍  Search patient ID, name, bed…"
+          oninput="filterTable()"
+          class="border border-slate-200 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 w-full sm:w-64" />
+        <select id="status-filter" onchange="filterTable()"
+          class="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+          <option value="">All Statuses</option>
+          <option value="Discharged">✓ Discharged</option>
+          <option value="Ready for Bed Release">Ready for Bed Release</option>
+        </select>
+        <p id="row-count" class="text-xs text-slate-400 ml-auto"></p>
+      </div>
+
+      <!-- Table wrapper -->
+      <div class="bg-white rounded-xl shadow-sm ring-1 ring-slate-200/60 overflow-hidden">
+
+        <!-- Loading state -->
+        <div id="table-loading" class="py-16 text-center text-slate-400 text-sm">
+          <p class="text-2xl mb-3">⏳</p>
+          <p>Loading discharge records…</p>
+        </div>
+
+        <!-- Empty state -->
+        <div id="table-empty" class="hidden py-16 text-center">
+          <p class="text-3xl mb-3 opacity-50">🗂</p>
+          <p class="text-slate-600 font-medium">No discharge records yet</p>
+          <p class="text-slate-400 text-sm mt-1">Records appear here after a patient is discharged.</p>
+        </div>
+
+        <!-- Table -->
+        <table id="records-table" class="hidden w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/70">
+              <th class="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">#</th>
+              <th class="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Patient</th>
+              <th class="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden sm:table-cell">Bed / Ward</th>
+              <th class="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden md:table-cell">Doctor</th>
+              <th class="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider hidden lg:table-cell">Discharged At</th>
+              <th class="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+              <th class="px-4 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="records-body" class="divide-y divide-slate-100/80"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ═══════════  TOAST  ═══════════ -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] hidden">
+    <div class="flex items-center gap-3 bg-slate-900 text-white text-sm font-medium px-5 py-3 rounded-2xl shadow-xl shadow-slate-900/20">
+      <span id="toast-icon">✓</span>
+      <span id="toast-msg"></span>
+    </div>
+  </div>
+
+  <!-- ═══════════  RECORD MODAL  ═══════════ -->
+  <div id="record-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/30 px-4" style="backdrop-filter:blur(6px)">
+    <div class="bg-white rounded-2xl shadow-2xl shadow-slate-300/30 max-w-2xl w-full max-h-[88vh] overflow-y-auto animate-fade-in">
+
+      <!-- Modal header -->
+      <div class="flex items-center justify-between px-7 py-5 border-b border-slate-100/90 sticky top-0 bg-white z-10">
+        <div>
+          <h2 class="text-slate-900 font-bold text-base tracking-tight">Discharge Record</h2>
+          <p id="modal-meta" class="text-slate-500 text-sm mt-0.5"></p>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-xl rounded-lg p-1 hover:bg-slate-100 transition-colors">✕</button>
+      </div>
+
+      <!-- Modal body -->
+      <div class="px-7 py-6 space-y-6">
+
+        <!-- Patient info grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Patient ID</p>
+            <p id="modal-pid" class="font-semibold text-slate-800 text-sm"></p>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Patient Name</p>
+            <p id="modal-name" class="font-semibold text-slate-800 text-sm"></p>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Bed / Ward</p>
+            <p id="modal-bed" class="font-semibold text-slate-800 text-sm"></p>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">MO / Doctor</p>
+            <p id="modal-mo" class="font-semibold text-slate-800 text-sm"></p>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Discharged At</p>
+            <p id="modal-time" class="font-semibold text-slate-800 text-sm"></p>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4">
+            <p class="text-[10px] text-slate-400 uppercase tracking-wider mb-1">Status</p>
+            <p id="modal-status" class="font-semibold text-sm"></p>
+          </div>
+        </div>
+
+        <!-- Clinical summary -->
+        <div>
+          <p class="section-label mb-2">Clinical Summary</p>
+          <div id="modal-summary" class="text-slate-700 text-sm leading-relaxed bg-slate-50 rounded-xl p-5 whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Medications -->
+        <div>
+          <p class="section-label mb-2">Medications</p>
+          <div id="modal-meds" class="text-slate-700 text-sm leading-relaxed bg-slate-50 rounded-xl p-5 space-y-1"></div>
+        </div>
+
+        <!-- TCA -->
+        <div>
+          <p class="section-label mb-2">TCA / Follow-up Plan</p>
+          <div id="modal-tca" class="text-slate-700 text-sm leading-relaxed bg-slate-50 rounded-xl p-5 whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Footer actions -->
+        <div class="flex flex-col sm:flex-row gap-3 pt-2">
+          <a id="modal-pdf-link" href="#" target="_blank"
+            class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gray-800 hover:bg-gray-900
+                   text-white font-semibold text-sm py-3 transition-colors shadow-sm">
+            📄 Download PDF
+          </a>
+          <button onclick="closeModal()"
+            class="flex-1 flex items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50
+                   text-slate-700 font-semibold text-sm py-3 transition-colors">
+            Close
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════  JAVASCRIPT  ═══════════ -->
+  <script>
+    let _allRecords = [];
+
+    // ── Load all records from API ──────────────────────────────────────────────
+    async function loadRecords() {
+      document.getElementById('refresh-icon').textContent = '⏳';
+      document.getElementById('table-loading').classList.remove('hidden');
+      document.getElementById('table-empty').classList.add('hidden');
+      document.getElementById('records-table').classList.add('hidden');
+      try {
+        const res  = await fetch('/api/pharmacy-queue');
+        if (!res.ok) { console.error('Failed to load records:', res.status); return; }
+        _allRecords = await res.json();
+        renderTable(_allRecords);
+      } catch (e) {
+        console.error('loadRecords error:', e);
+      } finally {
+        document.getElementById('refresh-icon').textContent = '🔄';
+        document.getElementById('table-loading').classList.add('hidden');
+      }
+    }
+
+    // ── Render table rows ──────────────────────────────────────────────────────
+    function renderTable(records) {
+      const body  = document.getElementById('records-body');
+      const table = document.getElementById('records-table');
+      const empty = document.getElementById('table-empty');
+      const cnt   = document.getElementById('row-count');
+
+      if (!records.length) {
+        empty.classList.remove('hidden');
+        table.classList.add('hidden');
+        if (cnt) cnt.textContent = '0 records';
+        return;
+      }
+
+      empty.classList.add('hidden');
+      table.classList.remove('hidden');
+      if (cnt) cnt.textContent = `${records.length} record${records.length !== 1 ? 's' : ''}`;
+
+      body.innerHTML = records.map((r, i) => {
+        const ds = r.discharge_status || 'Ready for Bed Release';
+        const dsClass = ds === 'Discharged'
+          ? 'bg-emerald-50 text-emerald-700'
+          : 'bg-amber-50 text-amber-700';
+        const dsIcon  = ds === 'Discharged' ? '✓' : '⏳';
+
+        return `
+        <tr class="hover:bg-slate-50/70 transition-colors cursor-pointer animate-fade-in"
+            style="animation-delay:${Math.min(i * 20, 400)}ms"
+            onclick="openModal(${r.id})">
+          <td class="px-5 py-3.5 text-xs text-slate-400 font-mono">#${r.id}</td>
+          <td class="px-5 py-3.5">
+            <p class="font-semibold text-slate-900 text-sm">${r.patient_name || '—'}</p>
+            <p class="text-xs text-slate-400 mt-0.5 font-mono">${r.patient_id}</p>
+          </td>
+          <td class="px-4 py-3.5 hidden sm:table-cell">
+            <p class="font-medium text-slate-700 text-sm">${r.bed_id}</p>
+            <p class="text-xs text-slate-400">${r.department || '—'}</p>
+          </td>
+          <td class="px-4 py-3.5 text-slate-600 text-sm hidden md:table-cell">${r.mo_name}</td>
+          <td class="px-4 py-3.5 text-slate-500 text-xs hidden lg:table-cell">${r.discharged_at}</td>
+          <td class="px-4 py-3.5">
+            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${dsClass}">
+              ${dsIcon} ${ds}
+            </span>
+          </td>
+          <td class="px-4 py-3.5">
+            <a href="/api/discharge-records/${r.id}/pdf" target="_blank"
+               onclick="event.stopPropagation()"
+               class="text-xs text-blue-600 hover:text-blue-800 font-semibold transition-colors whitespace-nowrap">
+              📄 PDF
+            </a>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ── Search + filter ────────────────────────────────────────────────────────
+    function filterTable() {
+      const q      = document.getElementById('search-input').value.trim().toLowerCase();
+      const status = document.getElementById('status-filter').value;
+      const filtered = _allRecords.filter(r => {
+        const matchText = !q
+          || (r.patient_id   || '').toLowerCase().includes(q)
+          || (r.patient_name || '').toLowerCase().includes(q)
+          || (r.bed_id       || '').toLowerCase().includes(q)
+          || (r.mo_name      || '').toLowerCase().includes(q);
+        const matchStatus = !status || (r.discharge_status || '') === status;
+        return matchText && matchStatus;
+      });
+      renderTable(filtered);
+    }
+
+    // ── Modal ──────────────────────────────────────────────────────────────────
+    function openModal(id) {
+      const r = _allRecords.find(x => x.id === id);
+      if (!r) return;
+
+      const ds = r.discharge_status || '—';
+      const dsClass = ds === 'Discharged' ? 'text-emerald-600' : 'text-amber-600';
+
+      document.getElementById('modal-meta').textContent =
+        `Record #${r.id} · ${r.discharged_at}`;
+      document.getElementById('modal-pid').textContent    = r.patient_id    || '—';
+      document.getElementById('modal-name').textContent   = r.patient_name  || '—';
+      document.getElementById('modal-bed').textContent    = `${r.bed_id} · ${r.department || '—'}`;
+      document.getElementById('modal-mo').textContent     = r.mo_name       || '—';
+      document.getElementById('modal-time').textContent   = r.discharged_at || '—';
+
+      const statusEl = document.getElementById('modal-status');
+      statusEl.textContent  = ds;
+      statusEl.className    = `font-semibold text-sm ${dsClass}`;
+
+      document.getElementById('modal-summary').textContent =
+        r.clinical_summary || 'Not recorded';
+
+      const medsEl = document.getElementById('modal-meds');
+      if (r.medications && r.medications.length) {
+        medsEl.innerHTML = r.medications
+          .map(m => `<div class="flex gap-2"><span class="text-slate-400">•</span><span>${m}</span></div>`)
+          .join('');
+      } else {
+        medsEl.textContent = 'None recorded';
+      }
+
+      document.getElementById('modal-tca').textContent =
+        r.tca_plan || 'Not recorded';
+
+      document.getElementById('modal-pdf-link').href =
+        `/api/discharge-records/${r.id}/pdf`;
+
+      const modal = document.getElementById('record-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('record-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    document.getElementById('record-modal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // ── Toast ──────────────────────────────────────────────────────────────────
+    let _toastTimer = null;
+    function showToast(icon, msg, isError = false) {
+      const toast = document.getElementById('toast');
+      const inner = toast.querySelector('div');
+      document.getElementById('toast-icon').textContent = icon;
+      document.getElementById('toast-msg').textContent  = msg;
+      inner.className = `flex items-center gap-3 text-white text-sm font-medium px-5 py-3 rounded-2xl shadow-xl ${
+        isError ? 'bg-rose-700 shadow-rose-900/20' : 'bg-slate-900 shadow-slate-900/20'
+      }`;
+      toast.classList.remove('hidden');
+      clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => toast.classList.add('hidden'), 3500);
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    loadRecords();
+  </script>
+</body>
+</html>

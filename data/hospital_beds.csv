@@ -1,0 +1,27 @@
+bed_id,ward,status
+S1,Surgical,Occupied
+S2,Surgical,Occupied
+S3,Surgical,Occupied
+S4,Surgical,Occupied
+S5,Surgical,Occupied
+S6,Surgical,Clearing
+M1,Medical,Occupied
+M2,Medical,Occupied
+M3,Medical,Occupied
+M4,Medical,Occupied
+M5,Medical,Occupied
+M6,Medical,Empty
+O1,Orthopaedic,Occupied
+O2,Orthopaedic,Occupied
+O3,Orthopaedic,Occupied
+O4,Orthopaedic,Empty
+P1,Paediatric,Occupied
+P2,Paediatric,Occupied
+P3,Paediatric,Occupied
+P4,Paediatric,Empty
+ICU1,ICU,Occupied
+ICU2,ICU,Occupied
+ICU3,ICU,Occupied
+OG1,Obstetrics & Gynaecology,Occupied
+OG2,Obstetrics & Gynaecology,Occupied
+OG3,Obstetrics & Gynaecology,Empty

@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BedSwift — ED Nurse Triage Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          keyframes: {
+            'fade-in':   { '0%': { opacity:'0', transform:'translateY(10px)' }, '100%': { opacity:'1', transform:'translateY(0)' } },
+            'pulse-dot': { '0%,100%': { opacity:'1' }, '50%': { opacity:'0.35' } },
+          },
+          animation: {
+            'fade-in':   'fade-in 0.35s ease-out forwards',
+            'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { height: 100%; }
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; overflow-x: hidden; }
+
+    /* ── Sidebar (matches Ward Dashboard exactly) ── */
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; border-radius: 10px;
+      color: #64748b; font-size: .875rem; font-weight: 500;
+      transition: all .15s; text-decoration: none;
+    }
+    .sidebar-link:hover  { background: #f1f5f9; color: #1e293b; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+
+    /* ── Form fields ── */
+    .field-label { display:block; font-size:.72rem; font-weight:700; text-transform:uppercase;
+                   letter-spacing:.06em; color:#6b7280; margin-bottom:5px; }
+    .field-input {
+      width:100%; background:#fff; border:1.5px solid #e2e8f0; color:#374151;
+      border-radius:10px; padding:10px 14px; font-size:.875rem; outline:none;
+      transition:border-color .15s, box-shadow .15s;
+    }
+    .field-input:focus { border-color:#93c5fd; box-shadow:0 0 0 3px rgba(59,130,246,.1); }
+    .field-input::placeholder { color:#9ca3af; }
+
+    /* ── Section heading ── */
+    .section-label { font-size:.7rem; font-weight:700; color:#94a3b8;
+                     text-transform:uppercase; letter-spacing:.08em; }
+
+    /* ── Result section ── */
+    #result-section { display:none; }
+    #result-section.show { display:block; animation: fade-in 0.35s ease-out forwards; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:4px; }
+
+    /* ── Responsive sidebar ─────────────────────────────────── */
+    /* Fixed column: pin to viewport; nav scrolls inside; mobile drawer slides only below md */
+    @media (max-width: 767px) {
+      #sidebar { transition: transform .28s cubic-bezier(.4,0,.2,1); }
+      #sidebar { transform: translateX(-100%); }
+      #sidebar.open { transform: translateX(0); }
+    }
+    @media (min-width: 768px) {
+      #sidebar { transform: translateX(0); }
+    }
+    #sidebar-overlay {
+      display: none; position: fixed; inset: 0; z-index: 19;
+      background: rgba(0,0,0,.35); backdrop-filter: blur(1px);
+    }
+    #sidebar-overlay.open { display: block; }
+  </style>
+</head>
+
+<body class="min-h-screen flex">
+
+  <!-- Mobile sidebar overlay -->
+  <div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- ═══════════  SIDEBAR  ═══════════ -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 flex h-[100svh] w-60 max-h-[100dvh] flex-col overflow-hidden overscroll-y-contain bg-white border-r border-gray-100 shadow-sm">
+    <!-- Logo -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-base">🏥</div>
+        <div>
+          <p class="font-bold text-gray-900 text-sm leading-none">BedSwift</p>
+          <p class="text-xs text-gray-400 mt-0.5">ED Triage Portal</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- User info -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        {% set role_colors = {
+          'doctor':   'bg-slate-800',
+          'nurse':    'bg-emerald-600',
+          'admin':    'bg-indigo-600',
+          'pharmacy': 'bg-cyan-600'
+        } %}
+        <div class="w-9 h-9 rounded-full {{ role_colors.get(user.role, 'bg-slate-700') }} flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
+          {{ user.initials }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 leading-tight">{{ user.full_name }}</p>
+          <p class="text-xs text-gray-400 capitalize mt-0.5">{{ user.role }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav — role-aware -->
+    <nav class="flex-1 min-h-0 px-3 py-3 flex flex-col overflow-y-auto overflow-x-hidden">
+      <div class="space-y-0.5">
+        <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
+        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
+        {% if user.role == 'admin' %}
+        <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
+        {% endif %}
+        {% if user.role in ('nurse', 'admin') %}
+        <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
+        {% endif %}
+        {% if user.role == 'admin' %}
+        <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
+        {% endif %}
+      </div>
+    </nav>
+
+    <!-- Status + logout -->
+    <div class="flex-shrink-0 px-4 py-4 border-t border-gray-100 space-y-2">
+      <div class="flex items-center gap-2 text-xs text-gray-400 px-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0"></span>
+        <span>Connected · TiDB Live</span>
+      </div>
+      <form method="post" action="/logout">
+        <button type="submit" class="sidebar-link w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600">
+          <span>🚪</span> Sign Out
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ═══════════  MAIN  ═══════════ -->
+  <main class="md:ml-60 flex-1 flex flex-col min-h-screen">
+
+    <!-- Top bar -->
+    <header class="bg-white border-b border-gray-100 px-4 sm:px-8 py-3.5 sticky top-0 z-10 flex items-center justify-between shadow-sm">
+      <!-- Hamburger (mobile only) -->
+      <button onclick="toggleSidebar()" class="md:hidden mr-3 p-2 rounded-lg hover:bg-gray-100 text-gray-500 flex-shrink-0" aria-label="Open menu">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm sm:text-base font-bold text-gray-900 truncate">ED Nurse Triage Portal</h1>
+        <p class="text-xs text-gray-400 mt-0.5 hidden sm:block">AI-powered assessment · Groq LLaMA 3 · Instant bed assignment</p>
+      </div>
+      <!-- Live bed counters -->
+      <div class="flex items-center gap-1.5 ml-2">
+        <div class="bg-white border border-gray-200 rounded-xl px-2.5 sm:px-4 py-1.5 sm:py-2 text-center shadow-sm">
+          <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wide font-semibold hidden sm:block">Available</p>
+          <p id="header-available" class="text-base sm:text-xl font-extrabold text-emerald-600 leading-none sm:mt-0.5">—</p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded-xl px-2.5 sm:px-4 py-1.5 sm:py-2 text-center shadow-sm">
+          <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-wide font-semibold hidden sm:block">Total</p>
+          <p id="header-total" class="text-base sm:text-xl font-extrabold text-gray-700 leading-none sm:mt-0.5">—</p>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 px-4 sm:px-8 py-4 sm:py-6 space-y-5 sm:space-y-6 overflow-y-auto max-w-4xl w-full">
+
+      <!-- ── Pre-Arrival Fast-Track ── -->
+      <section class="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl px-4 py-3 shadow-sm">
+        <div class="flex items-center gap-2.5 mb-2.5">
+          <div class="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0 text-base">⚡</div>
+          <div class="flex-1 min-w-0">
+            <p class="text-xs font-bold text-indigo-900 leading-tight">Pre-Arrival Fast-Track</p>
+            <p class="text-[11px] text-indigo-400 leading-tight">Patient self-triaged via portal? Enter Reference ID to auto-fill.</p>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <input id="ref-id-input" type="text"
+            placeholder="e.g. REF-A3X7K2"
+            class="field-input flex-1 uppercase tracking-widest font-mono text-indigo-900 placeholder:normal-case placeholder:tracking-normal placeholder:font-sans py-2 text-sm"
+            style="text-transform:uppercase"
+            onkeydown="if(event.key==='Enter') lookupReference()" />
+          <button onclick="lookupReference()"
+            id="lookup-btn"
+            class="flex-shrink-0 flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors shadow-sm whitespace-nowrap">
+            <span id="lookup-label">🔍 Lookup</span>
+            <span id="lookup-spinner" class="hidden">
+              <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+              </svg>
+            </span>
+          </button>
+        </div>
+        <!-- Result feedback -->
+        <div id="fasttrack-result" class="hidden mt-2"></div>
+      </section>
+
+      <!-- ── Triage Form ── -->
+      <section id="triage-form-section" class="bg-white border border-gray-100 rounded-xl p-6 shadow-sm relative">
+        <!-- Lock banner — shown after successful admission -->
+        <div id="form-lock-banner" class="hidden absolute inset-0 z-10 rounded-xl bg-white/80 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 pointer-events-none">
+          <div class="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-bold px-5 py-3 rounded-2xl shadow-sm">
+            <span class="text-base">🔒</span> Patient Admitted — Form Locked
+          </div>
+          <p class="text-xs text-slate-500">Click <strong>New Patient Assessment</strong> above to triage the next patient.</p>
+        </div>
+        <p class="section-label mb-5">Patient Triage Assessment</p>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Patient info -->
+          <div class="space-y-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="field-label">Patient Name</label>
+                <input id="p-name" type="text" class="field-input" placeholder="e.g. Ahmad bin Razak" />
+              </div>
+              <div>
+                <label class="field-label">IC / Passport No. <span class="text-gray-400 normal-case font-normal">(optional)</span></label>
+                <input id="p-ic" type="text" class="field-input" placeholder="e.g. 880512-14-5432" />
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="field-label">Date of Birth</label>
+                <input id="p-dob" type="date" onchange="calcAge()" class="field-input" />
+              </div>
+              <div>
+                <label class="field-label">Age <span class="text-gray-400 normal-case font-normal">(auto or manual)</span></label>
+                <input id="p-age" type="number" min="0" max="130" inputmode="numeric"
+                  class="field-input"
+                  placeholder="e.g. 54" />
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="field-label">Patient Phone</label>
+                <input id="p-phone" type="tel" class="field-input" placeholder="+60 11-1234 5678" />
+              </div>
+              <div>
+                <label class="field-label">NOK Phone <span class="text-gray-400 normal-case font-normal">(Next-of-Kin)</span></label>
+                <input id="p-nok" type="tel" class="field-input" placeholder="+60 12-345 6789" />
+              </div>
+            </div>
+            <div>
+              <label class="field-label">Triage Priority</label>
+              <select id="p-priority" class="field-input">
+                <option value="routine">Routine</option>
+                <option value="urgent">Urgent</option>
+                <option value="immediate">Immediate / Resus</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Symptoms -->
+          <div class="flex flex-col">
+            <label class="field-label">Chief Complaint &amp; Clinical Presentation</label>
+            <textarea id="symptoms-input" rows="9"
+              placeholder="Describe presenting symptoms in detail — onset, severity, associated symptoms, vital signs, relevant history…"
+              class="field-input flex-1 resize-none leading-relaxed"></textarea>
+            <p id="char-count" class="text-xs text-gray-400 mt-1.5 text-right">0 characters</p>
+          </div>
+        </div>
+
+        <div class="mt-5">
+          <button id="analyze-btn" onclick="analyze()"
+            class="w-full flex items-center justify-center gap-3 rounded-xl
+                   bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+                   text-white font-bold text-sm py-3.5
+                   shadow-sm transition-all duration-200
+                   focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-60">
+            <span id="btn-icon">🔍</span>
+            <span id="btn-text">Analyze &amp; Triage</span>
+            <span id="btn-spinner" class="hidden">
+              <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ── Results ── -->
+      <div id="result-section" class="space-y-4">
+
+        <!-- Verdict banner -->
+        <div id="verdict-banner" class="rounded-xl p-5 border flex items-start gap-4">
+          <span id="verdict-icon" class="text-2xl flex-shrink-0 mt-0.5"></span>
+          <div class="flex-1">
+            <p id="verdict-label" class="text-xs font-bold uppercase tracking-widest mb-1.5"></p>
+            <p id="verdict-text"  class="text-sm leading-relaxed"></p>
+          </div>
+        </div>
+
+        <!-- Bed availability + admission form (ADMISSION REQUIRED) -->
+        <div id="bed-panel" class="hidden bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+          <div class="px-5 py-3.5 border-b border-gray-100 flex items-center gap-3">
+            <span class="text-lg">🛏️</span>
+            <h3 class="font-bold text-gray-800 text-sm">Live Bed Availability</h3>
+            <span class="ml-auto text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">● LIVE</span>
+          </div>
+          <div class="px-5 py-4 space-y-4">
+
+            <!-- Compact stat row -->
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl bg-emerald-50 border border-emerald-200 py-3 text-center">
+                <p id="available-count" class="text-3xl font-extrabold text-emerald-600 leading-none mb-0.5">—</p>
+                <p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Available</p>
+              </div>
+              <div class="rounded-xl bg-gray-50 border border-gray-200 py-3 text-center">
+                <p id="total-count" class="text-3xl font-extrabold text-gray-700 leading-none mb-0.5">—</p>
+                <p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Total Beds</p>
+              </div>
+            </div>
+
+            <!-- Error / status message (hidden until needed) -->
+            <div id="bed-message" class="hidden rounded-xl px-4 py-3 text-sm font-medium"></div>
+
+            <!-- Admission form — shown when beds are available -->
+            <div id="admit-form" class="hidden space-y-3">
+              <!-- Hidden summary fields kept for JS compatibility -->
+              <div class="hidden" aria-hidden="true">
+                <span id="summary-name"></span>
+                <span id="summary-dob-age"></span>
+                <span id="summary-phone"></span>
+                <span id="summary-nok"></span>
+              </div>
+
+              <!-- Patient ID -->
+              <div>
+                <label class="field-label">Patient ID <span class="text-gray-400 normal-case font-normal">(auto-generated)</span></label>
+                <div class="flex gap-2">
+                  <input id="admit-pid" type="text" readonly class="field-input flex-1 font-mono text-blue-600 font-semibold bg-blue-50" />
+                  <button onclick="regeneratePID()" title="Regenerate"
+                    class="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors text-sm">🔄</button>
+                </div>
+              </div>
+
+              <!-- Doctor -->
+              <div>
+                <label class="field-label">Assigned Doctor / MO <span class="text-red-400">*</span></label>
+                <select id="admit-doctor" class="field-input">
+                  <option value="">— Loading doctors… —</option>
+                </select>
+              </div>
+
+              <!-- Confirm button -->
+              <button id="confirm-admit-btn" onclick="confirmAdmission()"
+                class="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700
+                       text-white font-bold py-3 text-sm shadow-sm transition-colors
+                       focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-60">
+                <span id="admit-btn-icon">✅</span>
+                <span id="admit-btn-text">Confirm Admission</span>
+                <span id="admit-btn-spinner" class="hidden">
+                  <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                  </svg>
+                </span>
+              </button>
+            </div>
+
+            <!-- Admission success -->
+            <div id="admit-success" class="hidden">
+              <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-lg">✅</span>
+                  <h4 class="font-bold text-emerald-700 text-sm">Patient Admitted — TiDB Updated</h4>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                  <div class="bg-white border border-gray-200 rounded-xl p-3 text-center">
+                    <p class="text-xs text-gray-400 mb-1">Bed</p>
+                    <p id="success-bed" class="text-xl font-extrabold text-blue-600"></p>
+                  </div>
+                  <div class="bg-white border border-gray-200 rounded-xl p-3 text-center">
+                    <p class="text-xs text-gray-400 mb-1">Ward</p>
+                    <p id="success-ward" class="text-sm font-bold text-gray-700"></p>
+                  </div>
+                  <div class="bg-white border border-gray-200 rounded-xl p-3 text-center">
+                    <p class="text-xs text-gray-400 mb-1">Patient ID</p>
+                    <p id="success-pid" class="text-sm font-bold font-mono text-blue-600"></p>
+                  </div>
+                  <div class="bg-white border border-gray-200 rounded-xl p-3 text-center">
+                    <p class="text-xs text-gray-400 mb-1">Assigned Doctor</p>
+                    <p id="success-doctor" class="text-sm font-bold text-indigo-600 leading-tight"></p>
+                  </div>
+                </div>
+                <button onclick="newPatient()"
+                  class="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 text-sm transition-colors">
+                  ✚ New Patient Assessment
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- No-admission guidance -->
+        <div id="gp-panel" class="hidden bg-white border border-amber-200 rounded-xl p-5 shadow-sm">
+          <div class="flex items-start gap-3">
+            <span class="text-xl flex-shrink-0">💊</span>
+            <div>
+              <p class="font-semibold text-amber-700 mb-1 text-sm">No Admission Required</p>
+              <p class="text-sm text-gray-500 leading-relaxed">
+                Patient may be discharged with outpatient follow-up. Advise GP / polyclinic visit.
+                Instruct patient to return to ED if condition deteriorates.
+              </p>
+              <button onclick="newPatient()"
+                class="mt-4 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold px-5 py-2 text-sm transition-colors">
+                ✚ New Patient Assessment
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /result-section -->
+
+      <div class="pb-10"></div>
+    </div>
+  </main>
+
+  <!-- ═══════════  TOAST  ═══════════ -->
+  <div id="fasttrack-toast" class="fixed top-5 left-1/2 -translate-x-1/2 z-[70] hidden">
+    <div id="fasttrack-toast-inner"
+      class="flex items-center gap-3 text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-xl min-w-[260px] max-w-sm text-center justify-center">
+    </div>
+  </div>
+
+  <!-- ═══════════  JAVASCRIPT  ═══════════ -->
+  <script>
+    // Stores the most recent /api/triage response so confirmAdmission() can forward
+    // the AI summary to the backend without re-calling the AI.
+    let _lastTriageResult = null;
+
+    // Prevents duplicate DB submissions for the same patient session.
+    let _admitted = false;
+
+    // ── Form lock / unlock ─────────────────────────────────────────────────
+    const _FORM_INPUTS = [
+      'p-name','p-ic','p-dob','p-phone','p-nok','p-priority',
+      'symptoms-input','ref-id-input',
+    ];
+    function setFormLocked(locked) {
+      _FORM_INPUTS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = locked;
+      });
+      document.getElementById('analyze-btn').disabled = locked;
+      document.getElementById('lookup-btn').disabled  = locked;
+      // Show / hide the frosted lock overlay on the triage card
+      document.getElementById('form-lock-banner').classList.toggle('hidden', !locked);
+      // Make the lock banner pointer-events-none so it doesn't eat clicks on the success card
+      if (locked) {
+        document.getElementById('form-lock-banner').style.pointerEvents = 'none';
+      }
+    }
+
+    // ── Fast-Track lookup ──────────────────────────────────────────────────
+    function setLookupLoading(on) {
+      document.getElementById('lookup-btn').disabled = on;
+      document.getElementById('lookup-label').classList.toggle('hidden', on);
+      document.getElementById('lookup-spinner').classList.toggle('hidden', !on);
+    }
+
+    function showFastTrackToast(type, msg) {
+      const toast = document.getElementById('fasttrack-toast');
+      const inner = document.getElementById('fasttrack-toast-inner');
+      inner.className = 'flex items-center gap-3 text-sm font-semibold px-5 py-3.5 rounded-2xl shadow-xl min-w-[260px] max-w-sm text-center justify-center ' +
+        (type === 'success'
+          ? 'bg-emerald-600 text-white shadow-emerald-900/20'
+          : 'bg-rose-600 text-white shadow-rose-900/20');
+      inner.textContent = msg;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3500);
+    }
+
+    async function lookupReference() {
+      const raw = document.getElementById('ref-id-input').value.trim().toUpperCase();
+      const resultEl = document.getElementById('fasttrack-result');
+      const clearTriageFormForSafety = () => {
+        ['p-name','p-ic','p-dob','p-age','p-phone','p-nok','symptoms-input'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) el.value = '';
+        });
+        document.getElementById('p-priority').value = 'routine';
+        document.getElementById('char-count').textContent = '0 characters';
+        document.getElementById('result-section').classList.remove('show');
+        document.getElementById('admit-form').classList.add('hidden');
+        document.getElementById('admit-success').classList.add('hidden');
+        document.getElementById('bed-panel').classList.add('hidden');
+        document.getElementById('gp-panel').classList.add('hidden');
+        _lastTriageResult = null;
+      };
+      if (!raw) {
+        resultEl.innerHTML = '<p class="text-xs text-rose-500 font-medium">Please enter a Reference ID.</p>';
+        resultEl.classList.remove('hidden');
+        return;
+      }
+
+      setLookupLoading(true);
+      resultEl.classList.add('hidden');
+
+      try {
+        const res  = await fetch(`/api/lookup-reference/${encodeURIComponent(raw)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultEl.innerHTML = `<p class="text-xs text-rose-600 font-medium">❌ ${data.detail || 'Reference ID not found.'}</p>`;
+          resultEl.classList.remove('hidden');
+          showFastTrackToast('error', '❌ Reference ID not found');
+          return;
+        }
+
+        // Hard-stop: only block if the record was ALREADY claimed before this lookup.
+        // `data.already_claimed` is set by the backend before it mutates the record.
+        if (data.already_claimed === true) {
+          clearTriageFormForSafety();
+          resultEl.innerHTML = `
+            <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm">
+              <p class="text-sm font-bold text-rose-700">❌ This Reference ID has already been looked up by a nurse and cannot be auto-filled again.</p>
+              <p class="text-xs text-rose-600 mt-1">If this is a new patient, ask them to generate a new Reference ID from the Patient Portal.</p>
+            </div>`;
+          resultEl.classList.remove('hidden');
+          showFastTrackToast('error', '❌ Reference ID already processed');
+          return;
+        }
+
+        // ── Auto-fill triage form ──
+        if (data.patient_name) document.getElementById('p-name').value = data.patient_name;
+        if (data.ic_number)    document.getElementById('p-ic').value   = data.ic_number;
+        if (data.patient_phone)document.getElementById('p-phone').value = data.patient_phone;
+        if (data.symptoms)     document.getElementById('symptoms-input').value = data.symptoms;
+
+        // Set triage priority based on AI recommendation
+        const priority = document.getElementById('p-priority');
+        if (data.admission_required) {
+          priority.value = 'urgent';
+        }
+
+        // Update char counter if it exists
+        const symEl = document.getElementById('symptoms-input');
+        if (symEl) {
+          symEl.dispatchEvent(new Event('input'));
+        }
+
+        // Show inline confirmation inside the fast-track panel
+        resultEl.innerHTML = `
+          <div class="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-indigo-100 shadow-sm">
+            <span class="text-emerald-500 text-lg flex-shrink-0">✓</span>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-900">
+                ${data.patient_name || 'Patient'} — ${raw}
+              </p>
+              <p class="text-xs text-slate-500 mt-0.5">
+                ${data.created_at} · Admission: ${data.admission_required ? '<span class="text-rose-600 font-bold">Required</span>' : 'Not required'}
+              </p>
+              <p class="text-xs text-indigo-600 font-medium mt-1">Form auto-filled — review and complete admission below.</p>
+            </div>
+          </div>`;
+        resultEl.classList.remove('hidden');
+
+        showFastTrackToast('success', '✅ Pre-Arrival Data Loaded Successfully');
+
+        // Scroll gently to the triage form
+        setTimeout(() => {
+          document.getElementById('p-name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 400);
+
+      } catch (err) {
+        resultEl.innerHTML = `<p class="text-xs text-rose-500 font-medium">Network error: ${err.message}</p>`;
+        resultEl.classList.remove('hidden');
+        showFastTrackToast('error', '❌ Network error');
+      } finally {
+        setLookupLoading(false);
+      }
+    }
+
+    // ── Live bed count (header) ────────────────────────────────────────────
+    async function refreshBedCount() {
+      try {
+        const d = await fetch('/api/dashboard').then(r => r.json());
+        document.getElementById('header-available').textContent =
+          (d.stats.available + d.stats.clearing);
+        document.getElementById('header-total').textContent = d.stats.total;
+      } catch {}
+    }
+    refreshBedCount();
+    setInterval(refreshBedCount, 30000);
+    loadDoctors();
+
+    // ── Char counter ───────────────────────────────────────────────────────
+    const textarea = document.getElementById('symptoms-input');
+    textarea.addEventListener('input', () => {
+      document.getElementById('char-count').textContent = `${textarea.value.length} characters`;
+    });
+
+    // ── Patient ID generator ───────────────────────────────────────────────
+    function generatePID() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let id = 'P-';
+      for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
+      return id;
+    }
+    function regeneratePID() {
+      document.getElementById('admit-pid').value = generatePID();
+    }
+
+    // ── Analyze ────────────────────────────────────────────────────────────
+    async function analyze() {
+      const symptoms = textarea.value.trim();
+      if (!symptoms) {
+        showVerdict('error', '⚠️', 'Missing Input', 'Please describe the patient\'s symptoms before analyzing.');
+        document.getElementById('result-section').classList.add('show');
+        return;
+      }
+      setLoading(true);
+      document.getElementById('result-section').classList.remove('show');
+
+      try {
+        const res  = await fetch('/api/triage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symptoms }),
+        });
+        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        const data = await res.json();
+        renderResult(data);
+      } catch (err) {
+        showVerdict('error', '⚠️', 'Triage Error', err.message);
+        document.getElementById('result-section').classList.add('show');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── Render result ──────────────────────────────────────────────────────
+    function renderResult(data) {
+      _lastTriageResult = data;   // cache so confirmAdmission() can read ai_summary
+      const bedPanel = document.getElementById('bed-panel');
+      const gpPanel  = document.getElementById('gp-panel');
+
+      if (data.admission_required) {
+        showVerdict('red', '🔴', 'ADMISSION REQUIRED', data.ai_summary);
+
+        document.getElementById('available-count').textContent = data.available_beds ?? '—';
+        document.getElementById('total-count').textContent     = data.total_beds     ?? '—';
+
+        const bedMsg = document.getElementById('bed-message');
+        if ((data.available_beds ?? 0) > 0) {
+          bedMsg.classList.add('hidden');
+          document.getElementById('admit-pid').value = generatePID();
+          document.getElementById('admit-form').classList.remove('hidden');
+          document.getElementById('admit-success').classList.add('hidden');
+        } else {
+          bedMsg.className = 'rounded-xl px-4 py-3 text-sm font-medium bg-red-50 text-red-600 border border-red-200';
+          bedMsg.innerHTML = '⚠️ <strong>No beds available.</strong> Escalate to charge nurse immediately.';
+          bedMsg.classList.remove('hidden');
+          document.getElementById('admit-form').classList.add('hidden');
+        }
+
+        bedPanel.classList.remove('hidden');
+        gpPanel.classList.add('hidden');
+      } else {
+        showVerdict('green', '🟢', 'ADMISSION NOT REQUIRED', data.ai_summary);
+        bedPanel.classList.add('hidden');
+        gpPanel.classList.remove('hidden');
+      }
+
+      document.getElementById('result-section').classList.add('show');
+      document.getElementById('result-section').scrollIntoView({ behavior:'smooth', block:'start' });
+    }
+
+    // ── Confirm admission ──────────────────────────────────────────────────
+    async function confirmAdmission() {
+      // Guard: block duplicate submissions for the same patient session
+      if (_admitted) {
+        alert('This patient has already been admitted. Click "New Patient Assessment" to start a new triage.');
+        return;
+      }
+
+      const pid    = document.getElementById('admit-pid').value.trim();
+      const doctor = document.getElementById('admit-doctor').value.trim();
+
+      if (!doctor) {
+        alert('Please select an assigned doctor before confirming admission.');
+        return;
+      }
+
+      const ageRaw = (document.getElementById('p-age').value || '').trim();
+
+      setAdmitLoading(true);
+
+      try {
+        const res    = await fetch('/api/admit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            patient_id:               pid,
+            patient_name:             document.getElementById('p-name').value.trim(),
+            assigned_doctor_username: doctor,
+            patient_phone:            document.getElementById('p-phone').value.trim(),
+            nok_phone:                document.getElementById('p-nok').value.trim(),
+            ic_number:                document.getElementById('p-ic').value.trim(),
+            date_of_birth:            document.getElementById('p-dob').value.trim(),
+            age:                      ageRaw === '' ? 0 : (parseInt(ageRaw, 10) || 0),
+            triage_priority:          document.getElementById('p-priority').value.trim(),
+            admission_notes:          document.getElementById('symptoms-input').value.trim(),
+            ai_triage_summary:        _lastTriageResult ? (_lastTriageResult.ai_summary || '') : '',
+          }),
+        });
+        const result = await res.json();
+
+        if (!result.success) {
+          alert(`Admission failed: ${result.error}`);
+          return;
+        }
+
+        document.getElementById('success-bed').textContent  = result.bed_id;
+        document.getElementById('success-ward').textContent = result.ward;
+        document.getElementById('success-pid').textContent  = result.patient_id;
+        const drEl = document.getElementById('success-doctor');
+        if (drEl) drEl.textContent = result.assigned_doctor_name || '—';
+        document.getElementById('admit-form').classList.add('hidden');
+        document.getElementById('admit-success').classList.remove('hidden');
+        document.getElementById('admit-success').scrollIntoView({ behavior:'smooth' });
+
+        // Lock the form to prevent duplicate admissions
+        _admitted = true;
+        setFormLocked(true);
+
+        refreshBedCount();
+
+        const d     = await fetch('/api/dashboard').then(r => r.json());
+        const avail = d.stats.available + d.stats.clearing;
+        document.getElementById('available-count').textContent = avail;
+        document.getElementById('bed-message').classList.add('hidden');
+
+      } catch (err) {
+        alert(`Network error: ${err.message}`);
+      } finally {
+        setAdmitLoading(false);
+      }
+    }
+
+    // ── New patient reset ──────────────────────────────────────────────────
+    function newPatient() {
+      // Reset state flags first
+      _lastTriageResult = null;
+      _admitted         = false;
+
+      // Unlock all form controls
+      setFormLocked(false);
+
+      // Clear all inputs
+      ['p-name','p-ic','p-dob','p-age','p-phone','p-nok','symptoms-input','admit-pid','ref-id-input']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      document.getElementById('p-priority').value   = 'routine';
+      document.getElementById('admit-doctor').value = '';
+
+      // Clear char counter
+      document.getElementById('char-count').textContent = '0 characters';
+
+      // Hide results, bed panel, success panels, fast-track result
+      document.getElementById('result-section').classList.remove('show');
+      document.getElementById('admit-form').classList.add('hidden');
+      document.getElementById('admit-success').classList.add('hidden');
+      document.getElementById('bed-panel').classList.add('hidden');
+      document.getElementById('gp-panel').classList.add('hidden');
+      document.getElementById('fasttrack-result').classList.add('hidden');
+
+      // Fresh patient ID ready to go
+      document.getElementById('admit-pid').value = generatePID();
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => document.getElementById('p-name').focus(), 350);
+    }
+
+    // ── DOB → Age calculator ───────────────────────────────────────────────
+    function calcAge() {
+      const dob   = document.getElementById('p-dob').value;
+      const ageEl = document.getElementById('p-age');
+      if (!dob) { ageEl.value = ''; return; }
+      const today = new Date();
+      const birth = new Date(dob);
+      let age = today.getFullYear() - birth.getFullYear();
+      const m = today.getMonth() - birth.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+      ageEl.value = age >= 0 ? String(age) : '';
+    }
+
+    // ── Age (manual) → clear DOB when exact date unknown ───────────────────
+    document.getElementById('p-age').addEventListener('input', (e) => {
+      const val = (e.target.value || '').trim();
+      if (!val) return;
+      // Manual age entry implies exact DOB is unknown.
+      document.getElementById('p-dob').value = '';
+    });
+
+    // ── Load doctor list into admission dropdown ───────────────────────────
+    async function loadDoctors() {
+      try {
+        const res = await fetch('/api/doctors');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const doctors = await res.json();
+        console.log('Doctors loaded:', doctors);
+        const sel = document.getElementById('admit-doctor');
+        if (!Array.isArray(doctors) || doctors.length === 0) {
+          sel.innerHTML = '<option value="">— No doctors found —</option>';
+          return;
+        }
+        sel.innerHTML = '<option value="">— Select assigned doctor —</option>' +
+          doctors.map(d =>
+            `<option value="${d.username}">${d.full_name}</option>`
+          ).join('');
+      } catch (err) {
+        console.error('loadDoctors failed:', err);
+        document.getElementById('admit-doctor').innerHTML =
+          '<option value="">— Error loading doctors —</option>';
+      }
+    }
+
+    // ── Verdict helper ─────────────────────────────────────────────────────
+    function showVerdict(type, icon, label, text) {
+      const bgBorder = {
+        red:   'bg-red-50 border-red-200',
+        green: 'bg-emerald-50 border-emerald-200',
+        error: 'bg-amber-50 border-amber-200',
+      };
+      const labelColor = { red:'text-red-600',    green:'text-emerald-700', error:'text-amber-700' };
+      const textColor  = { red:'text-red-500',    green:'text-emerald-600', error:'text-amber-600' };
+      document.getElementById('verdict-banner').className =
+        `rounded-xl p-5 border flex items-start gap-4 ${bgBorder[type]}`;
+      document.getElementById('verdict-icon').textContent  = icon;
+      document.getElementById('verdict-label').textContent = label;
+      document.getElementById('verdict-label').className   =
+        `text-xs font-bold uppercase tracking-widest mb-1.5 ${labelColor[type]}`;
+      document.getElementById('verdict-text').textContent  = text;
+      document.getElementById('verdict-text').className    =
+        `text-sm leading-relaxed ${textColor[type]}`;
+    }
+
+    // ── Loading helpers ────────────────────────────────────────────────────
+    function setLoading(on) {
+      const btn = document.getElementById('analyze-btn');
+      btn.disabled = on;
+      document.getElementById('btn-icon').classList.toggle('hidden', on);
+      document.getElementById('btn-spinner').classList.toggle('hidden', !on);
+      document.getElementById('btn-text').textContent = on ? 'Analyzing…' : 'Analyze & Triage';
+    }
+    function setAdmitLoading(on) {
+      const btn = document.getElementById('confirm-admit-btn');
+      btn.disabled = on;
+      document.getElementById('admit-btn-icon').classList.toggle('hidden', on);
+      document.getElementById('admit-btn-spinner').classList.toggle('hidden', !on);
+      document.getElementById('admit-btn-text').textContent = on ? 'Confirming…' : 'Confirm Admission';
+    }
+
+    // Enter key submits triage
+    textarea.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); analyze(); }
+    });
+
+    // ── Sidebar toggle (mobile) ────────────────────────────────────────────
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('open');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
+    }
+    // Close sidebar when a nav link is tapped on mobile
+    document.querySelectorAll('#sidebar a, #sidebar button[type="submit"]')
+      .forEach(el => el.addEventListener('click', () => {
+        if (window.innerWidth < 768) closeSidebar();
+      }));
+  </script>
+
+</body>
+</html>

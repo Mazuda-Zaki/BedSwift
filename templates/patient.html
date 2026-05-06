@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>BedSwift — Patient Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          keyframes: {
+            'fade-up':   { '0%': { opacity: '0', transform: 'translateY(18px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+            'fade-in':   { '0%': { opacity: '0' },                                '100%': { opacity: '1' } },
+            'slide-up':  { '0%': { opacity: '0', transform: 'translateY(32px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+            'pulse-dot': { '0%,100%': { opacity: '1' }, '50%': { opacity: '0.3' } },
+            'spin-slow': { '0%': { transform: 'rotate(0deg)' },                   '100%': { transform: 'rotate(360deg)' } },
+          },
+          animation: {
+            'fade-up':   'fade-up 0.4s ease-out forwards',
+            'fade-in':   'fade-in 0.3s ease-out forwards',
+            'slide-up':  'slide-up 0.45s cubic-bezier(0.16,1,0.3,1) forwards',
+            'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+            'spin-slow': 'spin-slow 0.8s linear infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html, body { font-family: 'Inter', sans-serif; background: #f0f4ff; min-height: 100%; }
+
+    /* ── Gradient header ── */
+    .hero-gradient {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 60%, #a21caf 100%);
+    }
+
+    /* ── Card shadow ── */
+    .card { background: #fff; border-radius: 20px; box-shadow: 0 4px 24px rgba(79,70,229,.08), 0 1px 4px rgba(0,0,0,.06); }
+
+    /* ── Input ── */
+    .p-input {
+      width: 100%; background: #f8fafc; border: 2px solid #e2e8f0;
+      border-radius: 14px; padding: 14px 16px; font-size: .95rem;
+      outline: none; transition: border-color .15s, box-shadow .15s; color: #1e293b;
+    }
+    .p-input:focus { border-color: #6366f1; box-shadow: 0 0 0 4px rgba(99,102,241,.12); background: #fff; }
+    .p-input::placeholder { color: #94a3b8; }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      width: 100%; background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff; font-weight: 700; font-size: .95rem;
+      border: none; border-radius: 16px; padding: 16px 24px;
+      cursor: pointer; transition: opacity .15s, transform .1s;
+      box-shadow: 0 4px 16px rgba(99,102,241,.35);
+    }
+    .btn-primary:hover:not(:disabled) { opacity: .92; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* ── Secondary button ── */
+    .btn-secondary {
+      width: 100%; background: #f1f5f9; color: #475569;
+      font-weight: 600; font-size: .9rem;
+      border: none; border-radius: 14px; padding: 13px 24px;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-secondary:hover { background: #e2e8f0; }
+
+    /* ── Severity pill ── */
+    .pill-urgent { background: #fef2f2; color: #dc2626; border: 1.5px solid #fca5a5; }
+    .pill-gp     { background: #f0fdf4; color: #16a34a; border: 1.5px solid #86efac; }
+
+    /* ── Bed badge ── */
+    .bed-badge { background: #eff6ff; color: #2563eb; border: 1.5px solid #93c5fd; }
+
+    /* ── Progress step ── */
+    .step-dot-active { background: #4f46e5; }
+    .step-dot-done   { background: #4f46e5; }
+    .step-dot-idle   { background: #e2e8f0; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 4px; }
+
+    /* Hide / show helpers */
+    .screen { display: none; }
+    .screen.active { display: block; }
+  </style>
+</head>
+
+<body class="flex flex-col min-h-screen">
+
+  <!-- ═══════════  HERO HEADER  ═══════════ -->
+  <header class="hero-gradient text-white px-5 pt-12 pb-16 text-center relative overflow-hidden">
+    <!-- decorative blobs -->
+    <div class="absolute -top-10 -right-10 w-44 h-44 rounded-full bg-white/5 blur-2xl pointer-events-none"></div>
+    <div class="absolute -bottom-8 -left-8 w-36 h-36 rounded-full bg-white/8 blur-2xl pointer-events-none"></div>
+
+    <div class="relative">
+      <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-sm mb-4 shadow-lg">
+        <span class="text-2xl">🏥</span>
+      </div>
+      <h1 class="text-2xl font-extrabold tracking-tight">BedSwift</h1>
+      <p class="text-indigo-200 text-sm mt-1 font-medium">AI-powered patient triage · Hospital Kuala Lumpur</p>
+    </div>
+
+    <!-- Step indicator -->
+    <div id="step-indicator" class="flex items-center justify-center gap-2 mt-6">
+      <span id="dot-0" class="w-2.5 h-2.5 rounded-full step-dot-active transition-all duration-300"></span>
+      <span class="w-6 h-0.5 bg-white/30 rounded-full"></span>
+      <span id="dot-1" class="w-2.5 h-2.5 rounded-full step-dot-idle transition-all duration-300"></span>
+      <span class="w-6 h-0.5 bg-white/30 rounded-full"></span>
+      <span id="dot-2" class="w-2.5 h-2.5 rounded-full step-dot-idle transition-all duration-300"></span>
+    </div>
+  </header>
+
+  <!-- ═══════════  CONTENT AREA  ═══════════ -->
+  <main class="flex-1 px-4 -mt-8 pb-10 max-w-lg mx-auto w-full">
+
+    <!-- ─── SCREEN 0: Identification ─── -->
+    <div id="screen-0" class="screen active animate-slide-up">
+      <div class="card p-6 space-y-5">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Welcome</h2>
+          <p class="text-slate-500 text-sm mt-0.5">Please enter your details to begin your health assessment.</p>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Full Name <span class="text-slate-400 normal-case font-normal">(optional)</span>
+            </label>
+            <input id="p-name" type="text" placeholder="e.g. Ahmad bin Razak" class="p-input" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              IC / Passport Number <span class="text-rose-400">*</span>
+            </label>
+            <input id="p-ic" type="text" placeholder="e.g. 880512-14-5432"
+              class="p-input" oninput="clearFieldError('ic-error')" />
+            <p id="ic-error" class="text-rose-500 text-xs mt-1.5 hidden">Please enter your IC or Passport number.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Mobile Number <span class="text-slate-400 normal-case font-normal">(optional)</span>
+            </label>
+            <input id="p-phone" type="tel" placeholder="e.g. 012-3456789" class="p-input" />
+          </div>
+        </div>
+
+        <button class="btn-primary" onclick="goToSymptoms()">
+          Continue →
+        </button>
+
+        <p class="text-center text-xs text-slate-400 leading-relaxed">
+          Your information is used only for this assessment<br>and is not stored without admission.
+        </p>
+      </div>
+
+      <!-- Staff login link -->
+      <div class="text-center mt-4">
+        <a href="/login" class="text-xs text-indigo-500 hover:text-indigo-700 font-medium transition-colors">
+          Hospital staff? Sign in here →
+        </a>
+      </div>
+    </div>
+
+    <!-- ─── SCREEN 1: Symptom Input ─── -->
+    <div id="screen-1" class="screen animate-slide-up">
+      <div class="card p-6 space-y-5">
+
+        <!-- Patient badge -->
+        <div class="flex items-center gap-3 bg-indigo-50 rounded-2xl px-4 py-3">
+          <div class="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+            <span class="text-indigo-600 text-base">👤</span>
+          </div>
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-indigo-900 truncate" id="patient-greeting">Hello, there</p>
+            <p class="text-xs text-indigo-500">IC: <span id="patient-ic-display">—</span></p>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">How are you feeling?</h2>
+          <p class="text-slate-500 text-sm mt-0.5">Describe your symptoms in as much detail as possible. The more you share, the better our assessment.</p>
+        </div>
+
+        <!-- Symptom suggestions -->
+        <div class="flex flex-wrap gap-2">
+          <p class="text-xs text-slate-400 w-full font-semibold uppercase tracking-wide">Quick examples</p>
+          <button onclick="insertSuggestion(this)" class="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-3 py-1.5 rounded-full transition-colors font-medium">
+            Chest pain & shortness of breath
+          </button>
+          <button onclick="insertSuggestion(this)" class="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-3 py-1.5 rounded-full transition-colors font-medium">
+            High fever for 3 days
+          </button>
+          <button onclick="insertSuggestion(this)" class="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-3 py-1.5 rounded-full transition-colors font-medium">
+            Severe stomach pain
+          </button>
+          <button onclick="insertSuggestion(this)" class="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-600 px-3 py-1.5 rounded-full transition-colors font-medium">
+            Head injury / fall
+          </button>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+            Describe your symptoms <span class="text-rose-400">*</span>
+          </label>
+          <textarea id="symptoms-input" rows="5"
+            placeholder="e.g. I have had severe stomach pain for the past 6 hours, mainly on the lower right side. The pain is constant and gets worse when I move. I also feel nauseous and have a mild fever..."
+            class="p-input resize-none leading-relaxed"
+            oninput="clearFieldError('symptom-error'); updateCharCount()"></textarea>
+          <div class="flex items-center justify-between mt-1.5">
+            <p id="symptom-error" class="text-rose-500 text-xs hidden">Please describe your symptoms first.</p>
+            <p id="char-count" class="text-xs text-slate-400 ml-auto">0 characters</p>
+          </div>
+        </div>
+
+        <button id="analyze-btn" class="btn-primary" onclick="analyzeSymptoms()">
+          <span id="analyze-label">🔍 &nbsp;Analyze My Symptoms</span>
+          <span id="analyze-spinner" class="hidden inline-flex items-center gap-2">
+            <svg class="w-4 h-4 animate-spin-slow" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            Assessing…
+          </span>
+        </button>
+
+        <button class="btn-secondary" onclick="goBack(0)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ─── SCREEN 2: AI Result ─── -->
+    <div id="screen-2" class="screen animate-slide-up">
+      <div class="space-y-4">
+
+        <!-- Result card -->
+        <div id="result-card" class="card p-6 space-y-5">
+
+          <!-- Header row -->
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Assessment Result</p>
+              <h2 id="result-headline" class="text-lg font-extrabold text-slate-900 leading-snug"></h2>
+            </div>
+            <span id="severity-pill" class="flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full border whitespace-nowrap"></span>
+          </div>
+
+          <!-- AI summary -->
+          <div class="bg-slate-50 rounded-2xl p-4">
+            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">AI Triage Summary</p>
+            <p id="ai-summary" class="text-sm text-slate-700 leading-relaxed"></p>
+          </div>
+
+          <!-- Recommendation -->
+          <div id="recommendation-panel" class="space-y-3">
+
+            <!-- Hospital recommendation -->
+            <div class="flex items-center gap-3 bg-indigo-50 rounded-2xl px-4 py-3.5">
+              <span class="text-2xl flex-shrink-0">🏥</span>
+              <div class="min-w-0">
+                <p class="text-xs font-semibold text-indigo-400 uppercase tracking-wide">Nearest Hospital</p>
+                <p class="text-sm font-bold text-indigo-900">Hospital Kuala Lumpur</p>
+                <p class="text-xs text-indigo-500">Jalan Pahang, 50586 KL · Emergency entrance available 24/7</p>
+              </div>
+            </div>
+
+            <!-- Bed availability -->
+            <div id="bed-panel" class="flex items-center gap-3 rounded-2xl px-4 py-3.5 bed-badge">
+              <span class="text-2xl flex-shrink-0">🛏️</span>
+              <div>
+                <p class="text-xs font-semibold text-blue-400 uppercase tracking-wide">Live Bed Availability</p>
+                <p id="bed-count" class="text-sm font-bold text-blue-900"></p>
+                <p class="text-xs text-blue-500">Updated just now from TiDB Live</p>
+              </div>
+            </div>
+
+            <!-- Waiting time estimate -->
+            <div class="flex items-center gap-3 bg-amber-50 rounded-2xl px-4 py-3.5">
+              <span class="text-2xl flex-shrink-0">⏱️</span>
+              <div>
+                <p class="text-xs font-semibold text-amber-400 uppercase tracking-wide">Estimated Wait</p>
+                <p id="wait-time" class="text-sm font-bold text-amber-900"></p>
+                <p class="text-xs text-amber-500">Based on current ED occupancy</p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- GP recommendation (shown when admission NOT required) -->
+          <div id="gp-panel" class="hidden bg-emerald-50 rounded-2xl p-4 space-y-1.5">
+            <p class="text-xs font-bold text-emerald-500 uppercase tracking-wider">Recommended Action</p>
+            <p class="text-sm font-semibold text-emerald-900">Visit a GP or Klinik Kesihatan</p>
+            <p class="text-sm text-emerald-700 leading-relaxed">
+              Rest, stay hydrated, and monitor your symptoms. Seek emergency care immediately if your condition worsens or you develop difficulty breathing, chest pain, or altered consciousness.
+            </p>
+          </div>
+
+          <!-- Disclaimer -->
+          <p class="text-xs text-slate-400 leading-relaxed text-center">
+            ⚕️ This AI assessment is for guidance only and does not replace professional medical advice. Always consult a qualified healthcare provider.
+          </p>
+        </div>
+
+        <!-- CTA buttons -->
+        <div id="cta-buttons" class="space-y-3">
+          <!-- Admission CTA -->
+          <div id="admit-cta" class="hidden card p-5 space-y-3">
+            <p class="text-sm font-semibold text-slate-800 text-center">Ready to proceed to the Emergency Department?</p>
+            <button class="btn-primary text-base py-4" onclick="notifyHospital()">
+              <span id="notify-label">🚨 &nbsp;Notify Hospital &amp; Proceed to ED</span>
+              <span id="notify-spinner" class="hidden inline-flex items-center gap-2">
+                <svg class="w-4 h-4 animate-spin-slow" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                Notifying…
+              </span>
+            </button>
+            <p class="text-xs text-center text-slate-400">The hospital will be alerted and a bed will be prepared for your arrival.</p>
+          </div>
+
+          <!-- Start over -->
+          <button class="btn-secondary" onclick="startOver()">← Start a new assessment</button>
+        </div>
+
+        <!-- Success state — shown after notifying hospital -->
+        <div id="success-state" class="hidden card p-6 text-center space-y-4 animate-fade-up">
+          <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+            <span class="text-3xl">✅</span>
+          </div>
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">Hospital Notified</h3>
+            <p class="text-slate-500 text-sm mt-1 leading-relaxed">
+              The Emergency Department at Hospital Kuala Lumpur has been alerted.<br>
+              <strong class="text-slate-700">Please proceed to the ED entrance now.</strong>
+            </p>
+          </div>
+          <div class="bg-slate-50 rounded-2xl px-4 py-3 text-left space-y-2">
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide">What happens next</p>
+            <div class="flex items-start gap-2 text-sm text-slate-600">
+              <span class="text-emerald-500 font-bold mt-0.5">✓</span>
+              <span>Show this screen or your IC to the triage desk</span>
+            </div>
+            <div class="flex items-start gap-2 text-sm text-slate-600">
+              <span class="text-emerald-500 font-bold mt-0.5">✓</span>
+              <span>A bed has been flagged for your arrival</span>
+            </div>
+            <div class="flex items-start gap-2 text-sm text-slate-600">
+              <span class="text-emerald-500 font-bold mt-0.5">✓</span>
+              <span>A nurse will complete your admission when you arrive</span>
+            </div>
+          </div>
+          <div class="bg-indigo-50 rounded-2xl px-4 py-3">
+            <p class="text-xs text-indigo-500 font-semibold uppercase tracking-wide">Reference ID</p>
+            <p id="reference-id" class="text-xl font-extrabold text-indigo-700 mt-0.5 tracking-widest"></p>
+          </div>
+          <a href="tel:999"
+            class="block w-full bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm px-5 py-4 rounded-2xl shadow-md shadow-rose-900/20 transition-colors text-center">
+            🚑 &nbsp;Call 999 Emergency Services
+          </a>
+          <button class="btn-secondary" onclick="startOver()">Start a new assessment</button>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ═══════════  FOOTER  ═══════════ -->
+  <footer class="text-center pb-8 pt-2">
+    <p class="text-xs text-slate-400">BedSwift · Hospital Kuala Lumpur · Kementerian Kesihatan Malaysia</p>
+  </footer>
+
+  <!-- ═══════════  JAVASCRIPT  ═══════════ -->
+  <script>
+    // ── State ────────────────────────────────────────────────────────────────
+    let _patientName       = '';
+    let _patientIC         = '';
+    let _patientPhone      = '';
+    let _currentStep       = 0;
+    let _lastTriageData    = null;   // stores full API response from /api/triage
+
+    // ── Step dots ────────────────────────────────────────────────────────────
+    function setStep(n) {
+      _currentStep = n;
+      [0, 1, 2].forEach(i => {
+        const dot = document.getElementById(`dot-${i}`);
+        dot.className = 'w-2.5 h-2.5 rounded-full transition-all duration-300 ' +
+          (i < n  ? 'step-dot-done scale-100' :
+           i === n ? 'step-dot-active scale-125' :
+                     'step-dot-idle');
+      });
+    }
+
+    // ── Screen transitions ───────────────────────────────────────────────────
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => {
+        s.classList.remove('active');
+        s.style.opacity = '0';
+      });
+      const el = document.getElementById(`screen-${id}`);
+      el.classList.add('active');
+      requestAnimationFrame(() => { el.style.opacity = '1'; });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function goBack(step) {
+      setStep(step);
+      showScreen(step);
+    }
+
+    // ── Screen 0 → 1 ────────────────────────────────────────────────────────
+    function goToSymptoms() {
+      const ic = document.getElementById('p-ic').value.trim();
+      if (!ic) {
+        document.getElementById('ic-error').classList.remove('hidden');
+        document.getElementById('p-ic').focus();
+        return;
+      }
+      _patientName  = document.getElementById('p-name').value.trim()  || 'Patient';
+      _patientIC    = ic;
+      _patientPhone = document.getElementById('p-phone').value.trim() || '';
+
+      document.getElementById('patient-greeting').textContent =
+        `Hello, ${_patientName !== 'Patient' ? _patientName : 'there'}`;
+      document.getElementById('patient-ic-display').textContent = _patientIC;
+
+      setStep(1);
+      showScreen(1);
+    }
+
+    // ── Char counter ─────────────────────────────────────────────────────────
+    function updateCharCount() {
+      const len = document.getElementById('symptoms-input').value.length;
+      document.getElementById('char-count').textContent = `${len} character${len !== 1 ? 's' : ''}`;
+    }
+
+    // ── Quick suggestion chips ────────────────────────────────────────────────
+    function insertSuggestion(btn) {
+      document.getElementById('symptoms-input').value = btn.textContent.trim();
+      updateCharCount();
+      document.getElementById('symptoms-input').focus();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function clearFieldError(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function setAnalyzeLoading(on) {
+      document.getElementById('analyze-btn').disabled    = on;
+      document.getElementById('analyze-label').classList.toggle('hidden', on);
+      document.getElementById('analyze-spinner').classList.toggle('hidden', !on);
+    }
+
+    // ── Screen 1 → 2: Call real /api/triage ──────────────────────────────────
+    async function analyzeSymptoms() {
+      const symptoms = document.getElementById('symptoms-input').value.trim();
+      if (!symptoms) {
+        document.getElementById('symptom-error').classList.remove('hidden');
+        document.getElementById('symptoms-input').focus();
+        return;
+      }
+
+      setAnalyzeLoading(true);
+      document.getElementById('ic-error').classList.add('hidden');
+
+      try {
+        const res  = await fetch('/api/triage', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ symptoms }),
+        });
+        const data = await res.json();
+        renderResult(data);
+      } catch (err) {
+        // Fallback graceful degradation
+        renderResult({
+          admission_required: false,
+          ai_summary: `Unable to reach the triage service right now. Please proceed to the hospital directly or call 999 if this is an emergency. (${err.message})`,
+          available_beds: null,
+          total_beds: null,
+        });
+      } finally {
+        setAnalyzeLoading(false);
+      }
+    }
+
+    // ── Render AI result ──────────────────────────────────────────────────────
+    function renderResult(data) {
+      const urgent = data.admission_required;
+
+      // Headline + severity pill
+      document.getElementById('result-headline').textContent =
+        urgent ? 'Hospital Admission Recommended' : 'No Immediate Admission Needed';
+
+      const pill = document.getElementById('severity-pill');
+      pill.textContent  = urgent ? '🔴 Urgent' : '🟢 Non-Urgent';
+      pill.className    = 'flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full border whitespace-nowrap ' +
+        (urgent ? 'pill-urgent' : 'pill-gp');
+
+      // Strip the first line ("ADMISSION REQUIRED / NOT REQUIRED") from display
+      const lines   = data.ai_summary.split('\n');
+      const summary = lines.slice(1).join('\n').trim() || data.ai_summary;
+      document.getElementById('ai-summary').textContent = summary;
+
+      // Bed availability
+      if (urgent && data.available_beds != null) {
+        const beds = data.available_beds;
+        document.getElementById('bed-count').textContent =
+          `${beds} bed${beds !== 1 ? 's' : ''} available right now`;
+        document.getElementById('bed-panel').classList.remove('hidden');
+
+        // Estimate wait based on beds
+        const wait = beds === 0 ? 'High demand — queue expected'
+                   : beds <= 3  ? 'Approx. 30–60 min wait'
+                   : beds <= 7  ? 'Approx. 15–30 min wait'
+                                : 'Approx. < 15 min wait';
+        document.getElementById('wait-time').textContent = wait;
+      } else {
+        document.getElementById('bed-panel').classList.add('hidden');
+        document.getElementById('wait-time').textContent = 'No queue expected';
+      }
+
+      // Show / hide panels
+      document.getElementById('recommendation-panel').classList.toggle('hidden', !urgent);
+      document.getElementById('gp-panel').classList.toggle('hidden', urgent);
+      document.getElementById('admit-cta').classList.toggle('hidden', !urgent);
+
+      // Show success reset state
+      document.getElementById('success-state').classList.add('hidden');
+      document.getElementById('cta-buttons').classList.remove('hidden');
+
+      // Cache triage data so notifyHospital() can save it
+      _lastTriageData = data;
+
+      setStep(2);
+      showScreen(2);
+    }
+
+    // ── Notify Hospital ───────────────────────────────────────────────────────
+    async function notifyHospital() {
+      const btn = document.getElementById('admit-cta').querySelector('button');
+      btn.disabled = true;
+      document.getElementById('notify-label').classList.add('hidden');
+      document.getElementById('notify-spinner').classList.remove('hidden');
+
+      const refId = 'REF-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+
+      try {
+        await fetch('/api/pre-arrival', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ref_id:             refId,
+            patient_name:       _patientName !== 'Patient' ? _patientName : '',
+            ic_number:          _patientIC,
+            patient_phone:      _patientPhone,
+            symptoms:           document.getElementById('symptoms-input').value.trim(),
+            ai_summary:         _lastTriageData ? (_lastTriageData.ai_summary || '') : '',
+            admission_required: _lastTriageData ? !!_lastTriageData.admission_required : false,
+            available_beds:     _lastTriageData ? (_lastTriageData.available_beds ?? null) : null,
+          }),
+        });
+      } catch (_) {
+        // Silently continue — ref ID still shown to patient
+      } finally {
+        // Always restore button so it is never permanently stuck
+        btn.disabled = false;
+        document.getElementById('notify-label').classList.remove('hidden');
+        document.getElementById('notify-spinner').classList.add('hidden');
+      }
+
+      document.getElementById('reference-id').textContent = refId;
+      document.getElementById('cta-buttons').classList.add('hidden');
+      document.getElementById('success-state').classList.remove('hidden');
+      document.getElementById('success-state').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── Start over ────────────────────────────────────────────────────────────
+    function startOver() {
+      ['p-name', 'p-ic', 'p-phone'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      document.getElementById('symptoms-input').value = '';
+      updateCharCount();
+      document.getElementById('success-state').classList.add('hidden');
+      document.getElementById('cta-buttons').classList.remove('hidden');
+      // Fully reset notify button
+      const btn = document.getElementById('admit-cta').querySelector('button');
+      if (btn) btn.disabled = false;
+      document.getElementById('notify-label').classList.remove('hidden');
+      document.getElementById('notify-spinner').classList.add('hidden');
+      _lastTriageData = null;
+      setStep(0);
+      showScreen(0);
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    setStep(0);
+    document.querySelectorAll('.screen').forEach(s => { s.style.opacity = '1'; });
+  </script>
+
+</body>
+</html>

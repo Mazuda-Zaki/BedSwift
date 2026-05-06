@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BedSwift — Discharge Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          keyframes: {
+            'fade-in':  { '0%': { opacity: '0', transform: 'translateY(10px)' },  '100%': { opacity: '1', transform: 'translateY(0)' } },
+            'slide-in': { '0%': { opacity: '0', transform: 'translateX(-10px)' }, '100%': { opacity: '1', transform: 'translateX(0)' } },
+            'pulse-dot':{ '0%,100%': { opacity: '1' }, '50%': { opacity: '0.35' } },
+          },
+          animation: {
+            'fade-in':   'fade-in 0.35s ease-out forwards',
+            'slide-in':  'slide-in 0.4s ease-out forwards',
+            'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html { height: 100%; }
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; overflow-x: hidden; }
+
+    /* ── Sidebar nav (identical to Ward Dashboard) ─────────────── */
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; border-radius: 10px;
+      color: #64748b; font-size: .875rem; font-weight: 500;
+      transition: all .15s; text-decoration: none;
+    }
+    .sidebar-link:hover  { background: #f1f5f9; color: #1e293b; }
+    .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
+
+    /* ── Field labels & inputs (light theme) ───────────────────── */
+    .field-label {
+      display: block; font-size: .72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em;
+      color: #64748b; margin-bottom: 5px;
+    }
+    .field-input {
+      width: 100%; background: #fff; border: 1.5px solid #e2e8f0;
+      color: #1e293b; border-radius: 10px; padding: 9px 13px;
+      font-size: .875rem; transition: border-color .15s, box-shadow .15s; outline: none;
+    }
+    .field-input:focus { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(59,130,246,.08); }
+    .field-input::placeholder { color: #94a3b8; }
+    .field-input option { background: #fff; color: #1e293b; }
+
+    /* ── Section heading ────────────────────────────────────────── */
+    .section-label {
+      font-size: .7rem; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: .08em;
+    }
+
+    /* ── Animated checklist ─────────────────────────────────────── */
+    .check-item {
+      opacity: 0; transform: translateX(-12px);
+      transition: opacity 0.45s ease, transform 0.45s ease;
+    }
+    .check-item.show { opacity: 1; transform: translateX(0); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+    /* ── Responsive sidebar ─────────────────────────────────── */
+    @media (max-width: 767px) {
+      #sidebar { transition: transform .28s cubic-bezier(.4,0,.2,1); }
+      #sidebar { transform: translateX(-100%); }
+      #sidebar.open { transform: translateX(0); }
+    }
+    @media (min-width: 768px) {
+      #sidebar { transform: translateX(0); }
+    }
+    #sidebar-overlay {
+      display: none; position: fixed; inset: 0; z-index: 19;
+      background: rgba(0,0,0,.35); backdrop-filter: blur(1px);
+    }
+    #sidebar-overlay.open { display: block; }
+  </style>
+</head>
+
+<body class="min-h-screen flex">
+
+  <!-- Mobile sidebar overlay -->
+  <div id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- ═══════════  SIDEBAR  ═══════════ -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 flex h-[100svh] w-60 max-h-[100dvh] flex-col overflow-hidden overscroll-y-contain bg-white border-r border-gray-100 shadow-sm">
+
+    <!-- Logo -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-base shadow-sm">🏥</div>
+        <div>
+          <p class="font-bold text-gray-900 text-sm leading-none">BedSwift</p>
+          <p class="text-xs text-gray-400 mt-0.5">Discharge Assistant</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- User info -->
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        {% set role_colors = {
+          'doctor':   'bg-slate-800',
+          'nurse':    'bg-emerald-600',
+          'admin':    'bg-indigo-600',
+          'pharmacy': 'bg-cyan-600'
+        } %}
+        <div class="w-9 h-9 rounded-full {{ role_colors.get(user.role, 'bg-slate-700') }} flex items-center justify-center font-bold text-sm text-white flex-shrink-0">
+          {{ user.initials }}
+        </div>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-gray-900 leading-tight">{{ user.full_name }}</p>
+          <p class="text-xs text-gray-400 capitalize mt-0.5">{{ user.role }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nav — role-aware -->
+    <nav class="flex-1 min-h-0 px-3 py-3 space-y-0.5 overflow-y-auto overflow-x-hidden">
+      {% if user.role == 'admin' %}
+      <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
+      {% endif %}
+      <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
+      <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
+      {% if user.role in ('doctor', 'admin', 'nurse') %}
+      <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
+      {% endif %}
+      {% if user.role == 'admin' %}
+      <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
+      {% endif %}
+    </nav>
+
+    <!-- Status + sign out -->
+    <div class="flex-shrink-0 px-4 py-4 border-t border-gray-100 space-y-2">
+      <div class="flex items-center gap-2 text-xs text-gray-400 px-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse-dot flex-shrink-0"></span>
+        <span>Connected · TiDB Live</span>
+      </div>
+      <p id="last-refresh" class="text-xs text-gray-400 px-1">Ready</p>
+      <form method="post" action="/logout">
+        <button type="submit" class="sidebar-link w-full text-left text-red-500 hover:bg-red-50 hover:text-red-600">
+          <span>🚪</span> Sign Out
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- ═══════════  MAIN  ═══════════ -->
+  <main class="md:ml-60 flex-1 flex flex-col min-h-screen">
+
+    <!-- Top bar -->
+    <header class="bg-white border-b border-gray-100 px-4 sm:px-8 py-3.5 sticky top-0 z-10 shadow-sm flex items-center justify-between">
+      <!-- Hamburger (mobile only) -->
+      <button onclick="toggleSidebar()" class="md:hidden mr-3 p-2 rounded-lg hover:bg-gray-100 text-gray-500 flex-shrink-0" aria-label="Open menu">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="flex-1 min-w-0">
+        <h1 class="text-sm sm:text-base font-bold text-gray-900 truncate">Discharge Assistant</h1>
+        <p class="text-xs text-gray-400 mt-0.5 hidden sm:block">AI-powered documentation · Gemini 2.5 Flash · Live TiDB Cloud</p>
+      </div>
+      <a href="/ward"
+        class="ml-2 flex items-center gap-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600
+               text-xs font-semibold px-3 sm:px-3.5 py-2 rounded-lg border border-gray-200 transition-colors flex-shrink-0">
+        <span class="hidden sm:inline">← Ward Dashboard</span>
+        <span class="sm:hidden">← Ward</span>
+      </a>
+    </header>
+
+    <div class="flex-1 px-4 sm:px-8 py-4 sm:py-6 space-y-5 overflow-y-auto max-w-5xl w-full">
+
+      <!-- ── Select Admitted Patient ── -->
+      <section class="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <p class="section-label">Select Admitted Patient</p>
+          <button onclick="loadPatients()"
+            class="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-semibold transition-colors">
+            <span id="refresh-icon">🔄</span> Refresh List
+          </button>
+        </div>
+        <select id="patient-select" class="field-input" onchange="onPatientSelect(this.value)">
+          <option value="">— Loading admitted patients… —</option>
+        </select>
+        <p class="text-xs text-gray-400 mt-2">Only patients currently in an Occupied or Clearing bed are shown.</p>
+      </section>
+
+      <!-- ── Admission Summary (revealed after patient selection) ── -->
+      <section id="admission-summary" class="hidden rounded-xl shadow-sm overflow-hidden border border-blue-200">
+        <!-- Header bar -->
+        <div class="px-6 py-3.5 bg-blue-600 flex items-center gap-3">
+          <span class="text-white text-base">📋</span>
+          <p class="font-bold text-white text-sm">Admission Summary</p>
+          <span class="text-blue-200 text-xs">— review before preparing discharge notes</span>
+        </div>
+        <!-- Content grid -->
+        <div class="bg-blue-50 px-6 py-5 space-y-4">
+          <!-- Row 1: Identity -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient Name</p>
+              <p id="as-name" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient ID</p>
+              <p id="as-pid" class="text-sm font-semibold text-blue-700 font-mono">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Date of Birth</p>
+              <p id="as-dob" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Age</p>
+              <p id="as-age" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+          </div>
+          <!-- Row 2: Bed / Ward / Admitted / Priority -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Bed</p>
+              <p id="as-bed" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Ward / Department</p>
+              <p id="as-ward" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Admitted</p>
+              <p id="as-admitted" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Triage Priority</p>
+              <p id="as-priority" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+          </div>
+          <!-- Row 3: Contact / Doctor -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient Phone</p>
+              <p id="as-phone" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div>
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">NOK Phone</p>
+              <p id="as-nok" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+            <div class="md:col-span-2">
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Assigned Doctor</p>
+              <p id="as-doctor" class="text-sm font-semibold text-gray-800">—</p>
+            </div>
+          </div>
+          <!-- Row 4: AI Triage Summary (primary) + raw notes (collapsible fallback) -->
+          <div id="as-triage-block">
+            <!-- AI summary — shown when available -->
+            <div id="as-ai-summary-row">
+              <div class="flex items-center gap-2 mb-1.5">
+                <span class="text-[10px] text-indigo-500 font-semibold uppercase tracking-wide">🤖 AI Triage Summary</span>
+                <span class="text-[9px] bg-indigo-50 text-indigo-400 border border-indigo-100 px-1.5 py-0.5 rounded-full font-semibold tracking-wide">AI Generated</span>
+              </div>
+              <div id="as-ai-summary"
+                class="text-sm text-gray-700 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">—</div>
+            </div>
+            <!-- Raw nurse notes — collapsible, shown only when AI summary exists -->
+            <div id="as-raw-notes-row" class="hidden mt-2">
+              <button onclick="toggleRawNotes()" class="text-[10px] text-gray-400 hover:text-gray-600 font-semibold uppercase tracking-wide flex items-center gap-1 transition-colors">
+                <span id="raw-notes-chev">▶</span> Raw Nurse Notes
+              </button>
+              <div id="as-notes" class="hidden mt-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 leading-relaxed whitespace-pre-line">—</div>
+            </div>
+            <!-- Fallback: only raw notes when no AI summary -->
+            <div id="as-fallback-row" class="hidden">
+              <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-1.5">Chief Complaint / Admission Notes</p>
+              <div id="as-notes-fallback"
+                class="text-sm text-gray-700 bg-white border border-blue-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">—</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Hidden inputs used by processDischarge() API payload -->
+      <input id="f-patient-id"    type="hidden" value="" />
+      <input id="f-bed"           type="hidden" value="" />
+      <input id="f-patient-phone" type="hidden" value="" />
+      <input id="f-nok-phone"     type="hidden" value="" />
+      <input id="f-dept"          type="hidden" value="" />
+
+      <!-- ── Discharge Details Form ── -->
+      <section id="triage-notes-section" class="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+        <p class="section-label mb-5">Discharge Clinical Notes</p>
+
+        <div class="space-y-4">
+
+          <!-- Doctor row -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="field-label">MO / Doctor <span class="text-gray-400 normal-case font-normal">(auto-filled)</span></label>
+              <input id="f-mo" type="text" readonly
+                value="{{ user.full_name }}"
+                class="field-input bg-gray-50 text-gray-500 cursor-not-allowed" />
+            </div>
+            <div>
+              <label class="field-label text-gray-400 normal-case font-normal">Select a patient above to begin</label>
+              <div id="discharge-patient-badge" class="field-input bg-gray-50 text-gray-400 text-xs leading-tight py-2.5">
+                No patient selected
+              </div>
+            </div>
+          </div>
+
+          <!-- Notes textarea (full width, larger) -->
+          <div>
+            <!-- Label row with voice button -->
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="field-label mb-0">Discharge Clinical Notes</label>
+              <!-- Voice dictation toolbar -->
+              <div class="flex items-center gap-2">
+                <span id="voice-status-text" class="text-xs text-gray-400 hidden"></span>
+                <button id="voice-btn" type="button" onclick="toggleRecording()"
+                  title="Record discharge notes by voice"
+                  class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200
+                         bg-white hover:bg-red-50 hover:border-red-300 text-gray-600 hover:text-red-600
+                         text-xs font-semibold transition-all duration-200 shadow-sm">
+                  <span id="voice-btn-icon">🎙️</span>
+                  <span id="voice-btn-label">Dictate</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Recording indicator bar (hidden unless recording) -->
+            <div id="voice-recording-bar"
+              class="hidden mb-2 flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
+              <span class="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+              </span>
+              <p class="text-red-600 text-xs font-semibold flex-1">Recording… speak your discharge notes clearly</p>
+              <button onclick="toggleRecording()"
+                class="text-xs text-red-500 hover:text-red-700 font-bold border border-red-300 rounded-lg px-2.5 py-1 transition-colors">
+                Stop
+              </button>
+            </div>
+
+            <!-- Transcription status bar (hidden unless uploading/done) -->
+            <div id="voice-transcribe-bar"
+              class="hidden mb-2 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+              <svg id="voice-tx-spinner" class="animate-spin h-3.5 w-3.5 text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+              <p id="voice-tx-msg" class="text-blue-600 text-xs font-semibold flex-1">Transcribing audio…</p>
+            </div>
+
+            <textarea id="f-notes" rows="11"
+              placeholder="Type discharge notes here, or use the 🎙️ Dictate button above to record by voice."
+              class="field-input resize-none leading-relaxed w-full"></textarea>
+            <p class="text-xs text-gray-400 mt-2">
+              Gemini 2.5 Flash will extract clinical summary, medications, and TCA plan from your notes.
+              You can edit transcribed text before processing.
+            </p>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="mt-6">
+          <button id="discharge-btn" onclick="generateDraft()"
+            class="w-full flex items-center justify-center gap-3 rounded-xl
+                   bg-blue-600 hover:bg-blue-700 active:bg-blue-800
+                   text-white font-bold text-sm py-3.5
+                   shadow-sm transition-all duration-200
+                   focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50">
+            <span id="d-icon">🤖</span>
+            <span id="d-text">Generate AI Draft</span>
+            <span id="d-spinner" class="hidden">
+              <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ── AI Draft Review (HITL step 2) ── -->
+      <section id="draft-review-section" class="hidden space-y-4 animate-fade-in">
+
+        <!-- Warning banner -->
+        <div class="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-xl px-5 py-4 shadow-sm">
+          <span class="text-amber-500 text-xl flex-shrink-0 mt-0.5">⚠️</span>
+          <div>
+            <p class="font-bold text-amber-800 text-sm">Please review and edit the AI draft below before finalizing.</p>
+            <p class="text-amber-600 text-xs mt-0.5">Gemini has generated the draft. Correct any errors, then click <strong>Approve &amp; Execute Discharge</strong> to trigger the Agent.</p>
+          </div>
+        </div>
+
+        <!-- Editable draft fields -->
+        <div class="bg-white border border-gray-100 rounded-xl p-6 shadow-sm space-y-5">
+          <div>
+            <label class="field-label">Clinical Summary <span class="text-indigo-400 normal-case font-normal">— AI generated, please verify</span></label>
+            <textarea id="draft-summary" rows="6"
+              class="field-input resize-none leading-relaxed w-full mt-1.5"
+              placeholder="AI clinical summary will appear here…"></textarea>
+          </div>
+          <div>
+            <label class="field-label">Medications Prescribed <span class="text-gray-400 normal-case font-normal">— one item per line</span></label>
+            <textarea id="draft-medications" rows="4"
+              class="field-input resize-none leading-relaxed w-full mt-1.5 font-mono text-sm"
+              placeholder="e.g. Paracetamol 500mg TDS × 5 days"></textarea>
+          </div>
+          <div>
+            <label class="field-label">TCA / Follow-up Plan <span class="text-indigo-400 normal-case font-normal">— AI generated, please verify</span></label>
+            <textarea id="draft-tca" rows="3"
+              class="field-input resize-none leading-relaxed w-full mt-1.5"
+              placeholder="Follow-up instructions will appear here…"></textarea>
+          </div>
+        </div>
+
+        <!-- Action row -->
+        <div class="flex flex-col sm:flex-row gap-3">
+          <button onclick="backToNotes()"
+            class="sm:flex-1 rounded-xl bg-white hover:bg-gray-50 text-gray-600 font-semibold
+                   py-3 text-sm border border-gray-200 transition-colors">
+            ← Back to Edit Notes
+          </button>
+          <button id="finalize-release-btn" onclick="finalizeAndRelease()"
+            class="sm:flex-[2] flex items-center justify-center gap-2.5 rounded-xl
+                   bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm py-3.5
+                   shadow-sm transition-all duration-200
+                   focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:opacity-50">
+            <span id="fr-icon">⚡</span>
+            <span id="fr-text">Approve &amp; Execute Discharge</span>
+            <span id="fr-spinner" class="hidden">
+              <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+              </svg>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ── Final success state — Mission Control card ── -->
+      <section id="final-success-section" class="hidden animate-fade-in">
+        <div class="rounded-2xl overflow-hidden shadow-lg border border-emerald-200">
+          <!-- Header -->
+          <div class="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-4 flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl flex-shrink-0">⚡</div>
+            <div>
+              <p class="font-extrabold text-white text-base tracking-tight">Agent Execution Complete</p>
+              <p id="final-meta" class="text-emerald-100 text-xs mt-0.5"></p>
+            </div>
+          </div>
+
+          <!-- Stats row -->
+          <div class="grid grid-cols-3 divide-x divide-emerald-100 bg-emerald-50 border-b border-emerald-200">
+            <div class="p-3 text-center">
+              <p class="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Bed</p>
+              <p id="final-bed" class="font-extrabold text-emerald-700 text-lg leading-none"></p>
+            </div>
+            <div class="p-3 text-center">
+              <p class="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Ward</p>
+              <p id="final-ward" class="font-bold text-gray-700 text-sm leading-none mt-0.5"></p>
+            </div>
+            <div class="p-3 text-center">
+              <p class="text-[10px] text-gray-400 uppercase tracking-wide mb-0.5">Bed Status</p>
+              <p class="font-bold text-emerald-600 text-sm leading-none mt-0.5">🟢 Available</p>
+            </div>
+          </div>
+
+          <!-- Mission checklist -->
+          <div class="bg-white px-5 py-4 space-y-2.5">
+            <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Orchestrator Actions</p>
+            <div class="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              <span class="text-emerald-500 text-lg leading-none mt-0.5">✅</span>
+              <div>
+                <p class="font-semibold text-gray-800 text-sm">Discharge Record &amp; PDF Generated</p>
+                <p id="mc-record-detail" class="text-xs text-gray-400 mt-0.5"></p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              <span class="text-emerald-500 text-lg leading-none mt-0.5">✅</span>
+              <div>
+                <p class="font-semibold text-gray-800 text-sm">e-Prescription Routed to Pharmacy</p>
+                <p class="text-xs text-gray-400 mt-0.5">Medications dispatched to hospital e-Pharmacy system</p>
+              </div>
+            </div>
+            <div id="mc-sms-row" class="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              <span id="mc-sms-icon" class="text-emerald-500 text-lg leading-none mt-0.5">✅</span>
+              <div>
+                <p class="font-semibold text-gray-800 text-sm">SMS Sent to Next-of-Kin</p>
+                <p id="mc-sms-detail" class="text-xs text-gray-400 mt-0.5"></p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
+              <span class="text-emerald-500 text-lg leading-none mt-0.5">✅</span>
+              <div>
+                <p class="font-semibold text-gray-800 text-sm">Bed Released to ED Dashboard</p>
+                <p id="mc-bed-detail" class="text-xs text-gray-400 mt-0.5"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="bg-gray-50 border-t border-gray-100 px-5 py-4 flex flex-col sm:flex-row gap-3">
+            <a id="final-pdf-link" href="#" target="_blank"
+              class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gray-800 hover:bg-gray-900
+                     text-white font-semibold text-sm py-3 transition-colors shadow-sm">
+              📄 Download Discharge PDF
+            </a>
+            <button onclick="startNewDischarge()"
+              class="flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700
+                     text-white font-bold text-sm py-3 transition-colors shadow-sm">
+              ✚ Start New Discharge
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Error banner ── -->
+      <div id="error-banner"
+        class="hidden bg-red-50 border border-red-200 rounded-xl px-5 py-4 flex items-center gap-3 animate-fade-in">
+        <span class="text-red-400 text-base flex-shrink-0">⚠️</span>
+        <p id="error-text" class="text-red-600 text-sm font-medium"></p>
+      </div>
+
+      <!-- ── Results panel (shown after success) ── -->
+      <section id="results-panel" class="hidden space-y-4 animate-fade-in">
+
+        <!-- Success header -->
+        <div class="bg-white border border-gray-100 rounded-xl px-6 py-4 shadow-sm flex items-center gap-4">
+          <div class="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-lg flex-shrink-0">✅</div>
+          <div>
+            <p class="font-bold text-gray-900 text-sm">Discharge Processed Successfully</p>
+            <p id="result-meta" class="text-gray-400 text-xs mt-0.5"></p>
+          </div>
+        </div>
+
+        <!-- Clinical cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-white border border-gray-100 rounded-xl p-5 shadow-sm md:col-span-2">
+            <p class="section-label mb-3">Clinical Summary</p>
+            <p id="r-summary" class="text-gray-700 text-sm leading-relaxed"></p>
+          </div>
+          <div class="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+            <p class="section-label mb-3">TCA / Follow-up</p>
+            <p id="r-tca" class="text-gray-700 text-sm leading-relaxed"></p>
+          </div>
+        </div>
+
+        <div class="bg-white border border-gray-100 rounded-xl p-5 shadow-sm">
+          <p class="section-label mb-3">Medications Prescribed</p>
+          <div id="r-meds" class="space-y-1.5"></div>
+        </div>
+
+        <!-- ── Discharge Workflow Status ── -->
+        <div class="bg-white border border-gray-100 rounded-xl p-6 shadow-sm">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <p class="section-label mb-0">Discharge Workflow Status</p>
+            <div class="flex flex-wrap items-center gap-2">
+              <span id="discharge-status-badge"
+                class="text-xs font-bold px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full whitespace-nowrap hidden">
+                —
+              </span>
+              <span id="result-record-id" class="text-[10px] text-gray-400 font-mono"></span>
+              <button type="button" id="refresh-workflow-btn" onclick="refreshWorkflowStatus()"
+                class="text-xs font-semibold px-3 py-2 rounded-lg border border-gray-200 bg-white
+                       hover:bg-gray-50 text-gray-600 transition-colors">
+                Refresh Workflow Status
+              </button>
+            </div>
+          </div>
+          <div class="space-y-3">
+
+            <!-- Step 1: Record created -->
+            <div class="check-item flex items-center gap-4 bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3.5" id="ci-0">
+              <div class="w-9 h-9 flex-shrink-0 rounded-xl bg-white border border-emerald-200 flex items-center justify-center text-base shadow-sm">📋</div>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-emerald-700 text-sm">Discharge Record Created</p>
+                <p class="text-emerald-500 text-xs mt-0.5">AI discharge package generated and routed automatically</p>
+              </div>
+              <span class="text-emerald-500 font-bold flex-shrink-0">✓</span>
+            </div>
+
+            <!-- Step 2: Agentic automation -->
+            <div class="check-item flex items-start gap-4 bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3.5" id="ci-1">
+              <div class="w-9 h-9 flex-shrink-0 rounded-xl bg-white border border-emerald-200 flex items-center justify-center text-base shadow-sm">🤖</div>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-emerald-700 text-sm">Agentic Automation</p>
+                <div class="mt-1.5 space-y-1">
+                  <p class="text-emerald-600 text-xs">✅ Prescriptions auto-routed to e-Pharmacy</p>
+                  <p id="ci-1-detail" class="text-emerald-600 text-xs">✅ Next-of-Kin notified via SMS</p>
+                </div>
+              </div>
+              <span class="text-emerald-500 font-bold flex-shrink-0">✓</span>
+            </div>
+
+            <!-- Step 4: Bed status -->
+            <div class="check-item flex items-center gap-4 bg-blue-50 border border-blue-200 rounded-xl px-5 py-3.5" id="ci-3">
+              <div class="w-9 h-9 flex-shrink-0 rounded-xl bg-white border border-blue-200 flex items-center justify-center text-base shadow-sm">🛏️</div>
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-blue-700 text-sm">Bed Status</p>
+                <p id="ci-3-detail" class="text-blue-500 text-xs mt-0.5">Ready for immediate release to Housekeeping after AI summary generation</p>
+              </div>
+              <span id="bed-status-badge"
+                class="text-xs font-bold px-2.5 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full whitespace-nowrap">
+                Occupied
+              </span>
+            </div>
+
+          </div>
+
+          <!-- Release bed button -->
+          <div id="final-discharge-panel" class="mt-4 hidden">
+            <div class="bg-purple-50 border border-purple-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div class="flex-1 min-w-0">
+                <p class="font-semibold text-purple-700 text-sm">Release Bed to Housekeeping / Make Available</p>
+                <p class="text-purple-500 text-xs mt-0.5">AI discharge workflow is complete. Release this bed now to continue the turnover lifecycle.</p>
+              </div>
+              <button id="finalize-btn" onclick="finalizeDischarge()"
+                class="flex-shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm
+                       px-5 py-2.5 rounded-xl transition-colors shadow-sm">
+                Release Bed Now
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- PDF Download -->
+        <div id="pdf-panel" class="hidden bg-white border border-gray-100 rounded-xl px-6 py-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div class="flex-1 min-w-0">
+            <p class="font-semibold text-gray-800 text-sm">Discharge Summary PDF</p>
+            <p class="text-xs text-gray-400 mt-0.5">Professional discharge report for patient records</p>
+          </div>
+          <a id="pdf-download-link" href="#" target="_blank"
+            class="flex-shrink-0 flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-colors shadow-sm">
+            📄 Download PDF
+          </a>
+        </div>
+
+        <!-- Bottom actions -->
+        <div class="flex gap-3 pb-10">
+          <button onclick="resetForm()"
+            class="flex-1 rounded-xl bg-white hover:bg-gray-50 text-gray-600 font-semibold
+                   py-3 text-sm border border-gray-200 transition-colors">
+            ← New Discharge
+          </button>
+          <a href="/ward"
+            class="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold
+                   py-3 text-sm text-center transition-colors">
+            View Dashboard →
+          </a>
+        </div>
+
+      </section>
+
+    </div><!-- /content -->
+  </main>
+
+  <!-- ═══════════  JAVASCRIPT  ═══════════ -->
+  <script>
+    // ── Patient data store ────────────────────────────────────────────────────
+    window._patientData = [];
+    let _currentRecordId = null;
+
+    // ── Toggle raw nurse notes visibility ─────────────────────────────────────
+    function toggleRawNotes() {
+      const notesEl = document.getElementById('as-notes');
+      const chevEl  = document.getElementById('raw-notes-chev');
+      const hidden  = notesEl.classList.toggle('hidden');
+      chevEl.textContent = hidden ? '▶' : '▼';
+    }
+
+    // ── Load admitted patients into dropdown ──────────────────────────────────
+    async function loadPatients() {
+      document.getElementById('refresh-icon').textContent = '⏳';
+      try {
+        const res  = await fetch('/api/admitted-patients');
+        const data = await res.json();
+        const sel  = document.getElementById('patient-select');
+        window._patientData = Array.isArray(data) ? data : [];
+
+        if (!window._patientData.length) {
+          sel.innerHTML = '<option value="">— No admitted patients — use ED Triage first —</option>';
+          return;
+        }
+
+        sel.innerHTML = '<option value="">— Select an admitted patient —</option>' +
+          window._patientData.map(p =>
+            `<option value="${p.patient_id}">${p.patient_id} — ${p.bed_id} (${p.ward})${p.name && p.name !== 'Anonymous' ? ' · ' + p.name : ''}</option>`
+          ).join('');
+      } catch (e) {
+        document.getElementById('patient-select').innerHTML =
+          '<option value="">— Error loading patients —</option>';
+        console.error('loadPatients error:', e);
+      } finally {
+        document.getElementById('refresh-icon').textContent = '🔄';
+      }
+    }
+
+    // ── Auto-fill fields + Admission Summary when patient selected ─────────────
+    function onPatientSelect(pid) {
+      const summary = document.getElementById('admission-summary');
+      const badge   = document.getElementById('discharge-patient-badge');
+
+      if (!pid) {
+        summary.classList.add('hidden');
+        badge.textContent = 'No patient selected';
+        ['f-patient-id','f-bed','f-patient-phone','f-nok-phone','f-dept']
+          .forEach(id => document.getElementById(id).value = '');
+        return;
+      }
+
+      const p = (window._patientData || []).find(x => x.patient_id === pid);
+      if (!p) return;
+
+      // ── Hidden inputs (used by processDischarge payload) ──────────────────
+      document.getElementById('f-patient-id').value    = p.patient_id    || '';
+      document.getElementById('f-bed').value            = p.bed_id        || '';
+      document.getElementById('f-patient-phone').value  = p.patient_phone || '';
+      document.getElementById('f-nok-phone').value      = p.nok_phone     || '';
+      document.getElementById('f-dept').value           = p.ward          || '';
+
+      // ── Patient badge (beside MO field) ───────────────────────────────────
+      badge.textContent = `${p.patient_id}  ·  ${p.name || 'Anonymous'}  ·  ${p.bed_id} (${p.ward})`;
+      badge.className   = 'field-input bg-emerald-50 text-emerald-700 text-xs font-semibold leading-tight py-2.5';
+
+      const nr = 'Not recorded';
+
+      // ── Populate Admission Summary card ───────────────────────────────────
+      document.getElementById('as-name').textContent     = p.name           || '—';
+      document.getElementById('as-pid').textContent      = p.patient_id     || '—';
+      document.getElementById('as-dob').textContent      = p.date_of_birth  || nr;
+      document.getElementById('as-age').textContent      = p.age            ? `${p.age} yrs old` : nr;
+      document.getElementById('as-bed').textContent      = p.bed_id         || '—';
+      document.getElementById('as-ward').textContent     = p.ward           || '—';
+      document.getElementById('as-admitted').textContent = p.admitted_at    || '—';
+      document.getElementById('as-priority').textContent = p.triage_priority || nr;
+      document.getElementById('as-phone').textContent    = p.patient_phone  || nr;
+      document.getElementById('as-nok').textContent      = p.nok_phone      || nr;
+      document.getElementById('as-doctor').textContent   = p.assigned_doctor_name || '—';
+      // AI triage summary vs raw notes display logic
+      const aiSummary  = (p.ai_triage_summary || '').trim();
+      const rawNotes   = (p.admission_notes   || '').trim();
+      if (aiSummary) {
+        // Strip the first line ("ADMISSION REQUIRED / NOT REQUIRED") for cleaner display
+        const lines = aiSummary.split('\n');
+        const displaySummary = lines.length > 1 && /ADMISSION/i.test(lines[0])
+          ? lines.slice(1).join('\n').trim()
+          : aiSummary;
+        document.getElementById('as-ai-summary').textContent = displaySummary || aiSummary;
+        document.getElementById('as-ai-summary-row').classList.remove('hidden');
+        document.getElementById('as-fallback-row').classList.add('hidden');
+        if (rawNotes) {
+          document.getElementById('as-notes').textContent = rawNotes;
+          document.getElementById('as-raw-notes-row').classList.remove('hidden');
+        } else {
+          document.getElementById('as-raw-notes-row').classList.add('hidden');
+        }
+      } else {
+        // No AI summary — fall back to raw notes
+        document.getElementById('as-ai-summary-row').classList.add('hidden');
+        document.getElementById('as-raw-notes-row').classList.add('hidden');
+        document.getElementById('as-fallback-row').classList.remove('hidden');
+        document.getElementById('as-notes-fallback').textContent = rawNotes || nr;
+      }
+
+      // ── Show summary ─────────────────────────────────────────────────────
+      summary.classList.remove('hidden');
+      summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // ── API error text (FastAPI uses `detail`, app JSON uses `error`) ───────────
+    function parseApiError(data) {
+      if (!data) return 'Request failed.';
+      if (typeof data.error === 'string' && data.error) return data.error;
+      const d = data.detail;
+      if (typeof d === 'string') return d;
+      if (Array.isArray(d)) {
+        return d.map(x => (x.msg || x.message || JSON.stringify(x))).join(' · ');
+      }
+      if (d && typeof d === 'object') return JSON.stringify(d);
+      return 'Request failed.';
+    }
+
+    // ── STEP 1 — Generate AI Draft (no DB write) ─────────────────────────────
+    async function generateDraft() {
+      const notes = document.getElementById('f-notes').value.trim();
+      if (!notes) {
+        showError('Please enter clinical notes before generating the AI draft.');
+        return;
+      }
+      if (!document.getElementById('f-patient-id').value.trim()) {
+        showError('Please select a patient first.');
+        return;
+      }
+
+      setLoading(true);
+      hideError();
+
+      try {
+        const res  = await fetch('/api/draft-discharge', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            clinical_notes: notes,
+            patient_id:     document.getElementById('f-patient-id').value.trim(),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showError(parseApiError(data));
+          return;
+        }
+        if (!data.success) {
+          showError(parseApiError(data) || 'AI draft generation failed.');
+          return;
+        }
+
+        // Populate the review textareas
+        document.getElementById('draft-summary').value       = data.clinical_summary || '';
+        document.getElementById('draft-medications').value   = (data.medications || []).join('\n');
+        document.getElementById('draft-tca').value           = data.tca_plan || '';
+
+        // Show review section, hide the notes form section
+        document.getElementById('triage-notes-section').classList.add('hidden');
+        document.getElementById('draft-review-section').classList.remove('hidden');
+        document.getElementById('draft-review-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      } catch (err) {
+        showError(`Network error: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // ── Back to notes ─────────────────────────────────────────────────────────
+    function backToNotes() {
+      document.getElementById('draft-review-section').classList.add('hidden');
+      document.getElementById('triage-notes-section').classList.remove('hidden');
+      document.getElementById('triage-notes-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── STEP 2 — Finalize & Release Bed ──────────────────────────────────────
+    async function finalizeAndRelease() {
+      const btn = document.getElementById('finalize-release-btn');
+      btn.disabled = true;
+      document.getElementById('fr-icon').classList.add('hidden');
+      document.getElementById('fr-spinner').classList.remove('hidden');
+      document.getElementById('fr-text').textContent = 'Agent executing hospital logistics…';
+
+      const editedMeds = document.getElementById('draft-medications').value
+        .split('\n').map(m => m.trim()).filter(Boolean);
+
+      const payload = {
+        patient_id:         document.getElementById('f-patient-id').value.trim(),
+        bed_number:         document.getElementById('f-bed').value.trim(),
+        mo_name:            document.getElementById('f-mo').value.trim(),
+        department:         document.getElementById('f-dept').value.trim(),
+        clinical_notes:     '',          // not needed — we have edited fields
+        patient_phone:      document.getElementById('f-patient-phone').value.trim(),
+        nok_phone:          document.getElementById('f-nok-phone').value.trim(),
+        edited_summary:     document.getElementById('draft-summary').value.trim(),
+        edited_medications: editedMeds,
+        edited_tca:         document.getElementById('draft-tca').value.trim(),
+      };
+
+      try {
+        const res  = await fetch('/api/process-discharge', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          showError(parseApiError(data));
+          btn.disabled = false;
+          document.getElementById('fr-icon').classList.remove('hidden');
+          document.getElementById('fr-spinner').classList.add('hidden');
+          document.getElementById('fr-text').textContent = 'Approve & Execute Discharge';
+          return;
+        }
+        if (!data.success) {
+          showError(parseApiError(data) || 'Finalization failed.');
+          btn.disabled = false;
+          document.getElementById('fr-icon').classList.remove('hidden');
+          document.getElementById('fr-spinner').classList.add('hidden');
+          document.getElementById('fr-text').textContent = 'Approve & Execute Discharge';
+          return;
+        }
+
+        // Show final success state
+        renderFinalSuccess(data);
+        // Refresh patient dropdown so discharged patient disappears immediately
+        loadPatients();
+
+      } catch (err) {
+        showError(`Network error: ${err.message}`);
+        btn.disabled = false;
+        document.getElementById('fr-icon').classList.remove('hidden');
+        document.getElementById('fr-spinner').classList.add('hidden');
+        document.getElementById('fr-text').textContent = 'Approve & Execute Discharge';
+      }
+    }
+
+    // ── Render final success — Mission Control card ───────────────────────────
+    function renderFinalSuccess(data) {
+      document.getElementById('draft-review-section').classList.add('hidden');
+      document.getElementById('final-success-section').classList.remove('hidden');
+
+      const patientLabel = data.patient_name || data.patient_id || '—';
+
+      // Header meta
+      document.getElementById('final-meta').textContent =
+        `${patientLabel} · Record #${data.record_id || '—'} · ${new Date().toLocaleTimeString('en-MY', {hour:'2-digit', minute:'2-digit'})} MYT`;
+
+      // Stats row
+      document.getElementById('final-bed').textContent  = data.bed_id || '—';
+      document.getElementById('final-ward').textContent = data.ward   || '—';
+
+      // Checklist details
+      document.getElementById('mc-record-detail').textContent =
+        `Record #${data.record_id || '—'} saved · PDF ready for download`;
+
+      // SMS row — show phone or "no NOK on record"
+      const nokPhone = data.nok_phone || '';
+      document.getElementById('mc-sms-detail').textContent = nokPhone
+        ? `Notified ${nokPhone} — discharge confirmed`
+        : 'No NOK phone on record — SMS skipped';
+      if (!nokPhone) {
+        document.getElementById('mc-sms-icon').textContent = '⚠️';
+        document.getElementById('mc-sms-row').classList.replace('bg-emerald-50', 'bg-amber-50');
+        document.getElementById('mc-sms-row').classList.replace('border-emerald-100', 'border-amber-100');
+      }
+
+      document.getElementById('mc-bed-detail').textContent =
+        `${data.bed_id || '—'} · ${data.ward || '—'} — now visible to ED Triage`;
+
+      // PDF link
+      if (data.record_id) {
+        document.getElementById('final-pdf-link').href =
+          `/api/discharge-records/${data.record_id}/pdf`;
+      }
+
+      // Lock the patient selector and notes form so nothing can be re-submitted
+      ['patient-select','f-notes','f-mo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = true;
+      });
+      document.getElementById('discharge-btn').disabled = true;
+
+      document.getElementById('final-success-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── Start New Discharge (full reset) ──────────────────────────────────────
+    async function startNewDischarge() {
+      // Re-enable everything before resetting
+      ['patient-select','f-notes','f-mo'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+      document.getElementById('discharge-btn').disabled = false;
+      resetForm();
+      // Rebuild dropdown so discharged patient is gone and new admissions appear
+      await loadPatients();
+    }
+
+    // Keep legacy alias so any existing references don't break
+    const processDischarge = generateDraft;
+
+    function defaultFinalDischargePanelMarkup() {
+      return (
+        '<div class="bg-purple-50 border border-purple-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="font-semibold text-purple-700 text-sm">Release Bed to Housekeeping / Make Available</p>' +
+            '<p class="text-purple-500 text-xs mt-0.5">AI discharge workflow is complete. Release this bed now to continue the turnover lifecycle.</p>' +
+          '</div>' +
+          '<button id="finalize-btn" onclick="finalizeDischarge()" ' +
+            'class="flex-shrink-0 bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-colors shadow-sm">' +
+            'Release Bed Now</button>' +
+        '</div>'
+      );
+    }
+
+    function applyWorkflowFromApi(data) {
+      const ds = data.discharge_status || 'Ready for Bed Release';
+
+      const dBadge = document.getElementById('discharge-status-badge');
+      dBadge.textContent = ds;
+      dBadge.classList.remove('hidden');
+
+      const panel = document.getElementById('final-discharge-panel');
+      if (ds === 'Ready for Bed Release') {
+        panel.classList.remove('hidden');
+        if (!document.getElementById('finalize-btn')) {
+          panel.innerHTML = defaultFinalDischargePanelMarkup();
+        }
+      } else if (ds === 'Discharged') {
+        panel.classList.remove('hidden');
+        panel.innerHTML =
+          '<div class="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3.5 flex items-center gap-3">' +
+          '<span class="text-emerald-500 text-xl">✓</span>' +
+          '<p class="font-semibold text-emerald-700 text-sm">Patient discharged — bed is now available</p></div>';
+        document.getElementById('bed-status-badge').textContent = 'Available';
+        document.getElementById('bed-status-badge').className =
+          'text-xs font-bold px-2.5 py-0.5 bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-full whitespace-nowrap';
+        document.getElementById('ci-3-detail').textContent =
+          'Bed released and marked available in real time';
+      } else {
+        panel.classList.add('hidden');
+        panel.innerHTML = defaultFinalDischargePanelMarkup();
+      }
+    }
+
+    async function refreshWorkflowStatus() {
+      if (!_currentRecordId) return;
+      const btn = document.getElementById('refresh-workflow-btn');
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Refreshing…';
+      try {
+        const res  = await fetch(`/api/discharge-records/${_currentRecordId}`);
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.detail || 'Could not refresh workflow status.');
+          return;
+        }
+        applyWorkflowFromApi(data);
+        hideError();
+      } catch (e) {
+        showError('Network error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+
+    // ── Render results + workflow status panel ────────────────────────────────
+    function renderResults(data) {
+      _currentRecordId = data.record_id || null;
+
+      document.getElementById('result-meta').textContent =
+        `Patient ${data.patient_id} · Bed ${data.bed_id} · ${data.ward}`;
+      if (_currentRecordId) {
+        document.getElementById('result-record-id').textContent = `Record #${_currentRecordId}`;
+      }
+
+      document.getElementById('r-summary').textContent = data.clinical_summary || '—';
+      document.getElementById('r-tca').textContent     = data.tca_plan         || '—';
+
+      const medsEl = document.getElementById('r-meds');
+      if (data.medications && data.medications.length) {
+        medsEl.innerHTML = data.medications.map(m =>
+          `<div class="flex items-start gap-2.5 text-sm text-gray-700">
+             <span class="text-blue-400 mt-0.5 flex-shrink-0">•</span>
+             <span>${m}</span>
+           </div>`
+        ).join('');
+      } else {
+        medsEl.innerHTML = '<p class="text-gray-400 text-sm">No medications prescribed.</p>';
+      }
+
+      // NOK (simulated)
+      document.getElementById('ci-1-detail').textContent =
+        data.nok_phone
+          ? `✅ Next-of-Kin notified via SMS to ${data.nok_phone}`
+          : '✅ Next-of-Kin notification attempted (no NOK phone on file)';
+
+      // Bed line (overridden below unless already discharged)
+      document.getElementById('ci-3-detail').textContent =
+        `Bed ${data.bed_id} (${data.ward}) — ready for immediate release to Housekeeping`;
+
+      // Workflow badges + final panel
+      const fd = {
+        discharge_status: data.discharge_status || 'Ready for Bed Release',
+      };
+      document.getElementById('final-discharge-panel').innerHTML = defaultFinalDischargePanelMarkup();
+      applyWorkflowFromApi(fd);
+      document.getElementById('bed-status-badge').textContent     = 'Occupied';
+      document.getElementById('bed-status-badge').className       =
+        'text-xs font-bold px-2.5 py-0.5 bg-blue-100 text-blue-700 border border-blue-200 rounded-full whitespace-nowrap';
+      if ((fd.discharge_status || '') !== 'Discharged') {
+        document.getElementById('ci-3-detail').textContent =
+          `Bed ${data.bed_id} (${data.ward}) — ready for immediate release to Housekeeping`;
+      }
+
+      // PDF download link
+      if (_currentRecordId) {
+        document.getElementById('pdf-download-link').href = `/api/discharge-records/${_currentRecordId}/pdf`;
+        document.getElementById('pdf-panel').classList.remove('hidden');
+      }
+
+      ['ci-0','ci-1','ci-3'].forEach(id =>
+        document.getElementById(id).classList.remove('show')
+      );
+
+      const panel = document.getElementById('results-panel');
+      panel.classList.remove('hidden');
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      [0, 1, 3].forEach(i => {
+        setTimeout(() => {
+          const el = document.getElementById(`ci-${i}`);
+          if (el) el.classList.add('show');
+        }, 300 + i * 450);
+      });
+
+      document.getElementById('last-refresh').textContent =
+        'Last discharge: ' + new Date().toLocaleTimeString();
+    }
+
+    // ── Final discharge ───────────────────────────────────────────────────────
+    async function finalizeDischarge() {
+      if (!_currentRecordId) return;
+      const btn = document.getElementById('finalize-btn');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = 'Processing…';
+      try {
+        const res  = await fetch(`/api/discharge-records/${_currentRecordId}/finalize`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.detail || 'Finalize failed.');
+          btn.disabled    = false;
+          btn.textContent = 'Release Bed Now';
+          return;
+        }
+        if (data.success) {
+          applyWorkflowFromApi({ discharge_status: 'Discharged' });
+        }
+      } catch (e) {
+        alert('Network error: ' + e.message);
+        if (document.getElementById('finalize-btn')) {
+          document.getElementById('finalize-btn').disabled    = false;
+          document.getElementById('finalize-btn').textContent = 'Release Bed Now';
+        }
+      }
+    }
+
+    // ── Reset form ────────────────────────────────────────────────────────────
+    function resetForm() {
+      _currentRecordId = null;
+      // Clear hidden payload inputs (do NOT clear f-mo — stays as session user)
+      ['f-patient-id','f-bed','f-patient-phone','f-nok-phone','f-dept','f-notes']
+        .forEach(id => document.getElementById(id).value = '');
+      document.getElementById('patient-select').value = '';
+
+      // Hide admission summary & reset badge
+      document.getElementById('admission-summary').classList.add('hidden');
+      const badge = document.getElementById('discharge-patient-badge');
+      badge.textContent = 'No patient selected';
+      badge.className   = 'field-input bg-gray-50 text-gray-400 text-xs leading-tight py-2.5';
+
+      // Reset HITL sections
+      ['draft-summary','draft-medications','draft-tca'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+      document.getElementById('triage-notes-section').classList.remove('hidden');
+      document.getElementById('draft-review-section').classList.add('hidden');
+      document.getElementById('final-success-section').classList.add('hidden');
+
+      // Reset finalize-release button state
+      const frBtn = document.getElementById('finalize-release-btn');
+      if (frBtn) {
+        frBtn.disabled = false;
+        document.getElementById('fr-icon').classList.remove('hidden');
+        document.getElementById('fr-spinner').classList.add('hidden');
+        document.getElementById('fr-text').textContent = 'Approve & Execute Discharge';
+      }
+      document.getElementById('discharge-btn').disabled = false;
+
+      // Hide old panels
+      document.getElementById('pdf-panel').classList.add('hidden');
+      document.getElementById('final-discharge-panel').classList.add('hidden');
+      document.getElementById('discharge-status-badge').classList.add('hidden');
+
+      hideResults();
+      hideError();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function setLoading(on) {
+      const btn = document.getElementById('discharge-btn');
+      btn.disabled = on;
+      document.getElementById('d-icon').classList.toggle('hidden', on);
+      document.getElementById('d-spinner').classList.toggle('hidden', !on);
+      document.getElementById('d-text').textContent = on ? 'Generating Draft…' : 'Generate AI Draft';
+    }
+
+    function showError(msg) {
+      document.getElementById('error-text').textContent = msg;
+      document.getElementById('error-banner').classList.remove('hidden');
+    }
+    function hideError()   { document.getElementById('error-banner').classList.add('hidden'); }
+    function hideResults() { document.getElementById('results-panel').classList.add('hidden'); }
+
+    // ── Voice Dictation ───────────────────────────────────────────────────────
+    let _mediaRecorder = null;
+    let _audioChunks   = [];
+    let _isRecording   = false;
+
+    async function toggleRecording() {
+      if (_isRecording) {
+        // ── Stop recording ────────────────────────────────────────────────
+        _mediaRecorder.stop();   // triggers 'onstop' handler below
+      } else {
+        // ── Start recording ───────────────────────────────────────────────
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          showVoiceError(
+            err.name === 'NotAllowedError'
+              ? 'Microphone access denied. Please allow microphone permission in your browser and try again.'
+              : `Microphone error: ${err.message}`
+          );
+          return;
+        }
+
+        _audioChunks = [];
+
+        // Prefer webm/opus; fall back to whatever the browser supports
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : MediaRecorder.isTypeSupported('audio/webm')
+            ? 'audio/webm'
+            : '';
+
+        _mediaRecorder = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+
+        _mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) _audioChunks.push(e.data);
+        };
+
+        _mediaRecorder.onstop = async () => {
+          // Release mic
+          stream.getTracks().forEach(t => t.stop());
+          setRecordingUI(false);
+          await sendAudioForTranscription();
+        };
+
+        _mediaRecorder.start();
+        setRecordingUI(true);
+      }
+    }
+
+    async function sendAudioForTranscription() {
+      showTranscribeBar('Transcribing audio with Groq Whisper…');
+
+      const blob     = new Blob(_audioChunks, { type: _mediaRecorder.mimeType || 'audio/webm' });
+      const formData = new FormData();
+      formData.append('audio', blob, 'recording.webm');
+
+      try {
+        const res  = await fetch('/api/transcribe-audio', { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          showVoiceError(data.detail || data.error || 'Transcription failed. Please try again.');
+          return;
+        }
+
+        // Insert transcribed text into the notes textarea (append if already has content)
+        const ta      = document.getElementById('f-notes');
+        const prefix  = ta.value.trim() ? ta.value.trim() + '\n\n' : '';
+        ta.value      = prefix + data.text;
+        ta.focus();
+        ta.scrollTop  = ta.scrollHeight;
+
+        showTranscribeBar('✅ Transcription added — please review and edit before processing.', false);
+        setTimeout(hideTranscribeBar, 4000);
+
+      } catch (err) {
+        showVoiceError(`Network error during transcription: ${err.message}`);
+      }
+    }
+
+    // ── UI state helpers ──────────────────────────────────────────────────────
+    function setRecordingUI(recording) {
+      _isRecording = recording;
+      const btn   = document.getElementById('voice-btn');
+      const icon  = document.getElementById('voice-btn-icon');
+      const label = document.getElementById('voice-btn-label');
+      const bar   = document.getElementById('voice-recording-bar');
+
+      if (recording) {
+        icon.textContent  = '⏹️';
+        label.textContent = 'Stop';
+        btn.classList.add('bg-red-50', 'border-red-300', 'text-red-600');
+        btn.classList.remove('bg-white', 'border-gray-200', 'text-gray-600');
+        bar.classList.remove('hidden');
+        hideTranscribeBar();
+      } else {
+        icon.textContent  = '🎙️';
+        label.textContent = 'Dictate';
+        btn.classList.remove('bg-red-50', 'border-red-300', 'text-red-600');
+        btn.classList.add('bg-white', 'border-gray-200', 'text-gray-600');
+        bar.classList.add('hidden');
+      }
+    }
+
+    function showTranscribeBar(msg, spinning = true) {
+      document.getElementById('voice-transcribe-bar').classList.remove('hidden');
+      document.getElementById('voice-tx-msg').textContent = msg;
+      document.getElementById('voice-tx-spinner').classList.toggle('hidden', !spinning);
+    }
+
+    function hideTranscribeBar() {
+      document.getElementById('voice-transcribe-bar').classList.add('hidden');
+    }
+
+    function showVoiceError(msg) {
+      hideTranscribeBar();
+      setRecordingUI(false);
+      showError(msg);   // reuse existing error banner
+    }
+
+    // ── Discharge History ─────────────────────────────────────────────────────
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadPatients();
+
+    // ── Sidebar toggle (mobile) ────────────────────────────────────────────
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('sidebar-overlay').classList.toggle('open');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').classList.remove('open');
+    }
+    document.querySelectorAll('#sidebar a, #sidebar button[type="submit"]')
+      .forEach(el => el.addEventListener('click', () => {
+        if (window.innerWidth < 768) closeSidebar();
+      }));
+  </script>
+
+</body>
+</html>
