@@ -869,7 +869,8 @@ async def download_discharge_pdf(record_id: int, request: Request):
 @app.post("/api/reset")
 async def reset_demo(request: Request):
     """
-    Wipe all patients + discharge records and restore the 26 default beds.
+    Wipe all patients + discharge records, restore 26 default beds,
+    then re-seed the 5 demo patients and 3 discharge records.
     Admin only.
     """
     from fastapi import HTTPException
@@ -881,9 +882,12 @@ async def reset_demo(request: Request):
         session.query(Patient).delete()
         session.commit()
     reseed_beds()
+    # Re-seed demo patients and discharge records so the dashboards look live
+    from seed_demo_data import seed as _seed_demo
+    _seed_demo(clean=False)
     return {
         "success": True,
-        "message": "Demo reset: 26 beds restored, patients and discharge records cleared.",
+        "message": "Demo reset complete: 26 beds restored and demo patients re-seeded.",
     }
 
 
