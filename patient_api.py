@@ -1,14 +1,20 @@
 import os
 import io
-import uuid
+import re
+import base64
+import shutil
+import pathlib
 import datetime
+from zoneinfo import ZoneInfo
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from groq import AsyncGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
@@ -23,6 +29,7 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 from core.database import engine, Bed, Patient, DischargeRecord, PreArrivalTriage, update_bed_status, reseed_beds, init_db, get_user, verify_password, User
 from core.schemas import DischargeDraft, DischargeDraftLite
+from core.id_generator import generate_patient_id
 
 load_dotenv()
 
@@ -39,6 +46,11 @@ app.add_middleware(
     session_cookie="bedswift_session",
 )
 templates = Jinja2Templates(directory="templates")
+
+# ── Static file serving (patient attachments) ────────────────────────────────
+UPLOAD_DIR = pathlib.Path("static/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Ensure DB tables + default seeds exist at startup
 init_db()
@@ -65,6 +77,7 @@ class SymptomRequest(BaseModel):
 class TriageResponse(BaseModel):
     admission_required: bool
     ai_summary: str
+    recommended_ward: str | None = None
     available_beds: int | None = None
     total_beds: int | None = None
 
@@ -76,25 +89,43 @@ class TriageResponse(BaseModel):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    if _user(request):
-        return RedirectResponse(url="/", status_code=303)
+    user = _user(request)
+    if user:
+        role = (user.get("role") or "").lower()
+        if role == "doctor":
+            landing = "/discharge-portal"
+        elif role == "nurse":
+            landing = "/"
+        elif role == "admin":
+            landing = "/ward"
+        elif role == "pharmacy":
+            landing = "/pharmacy"
+        else:
+            landing = "/ward"
+        return RedirectResponse(url=landing, status_code=303)
     return templates.TemplateResponse(request=request, name="login.html", context={"error": ""})
 
 
 @app.post("/login")
 async def login_submit(request: Request, username: str = Form(...), password: str = Form(...)):
     with Session(engine) as session:
-        u = session.query(User).filter(User.username == username).first()
+        key = username.strip().lower()
+        u = session.query(User).filter(func.lower(User.username) == key).first()
         if u and verify_password(password, u.password_hash):
             request.session["user"] = {
                 "username":  u.username,
                 "full_name": u.full_name or u.username,
-                "role":      u.role,
+                "role":      (u.role or "").lower(),
                 "initials":  "".join(w[0].upper() for w in (u.full_name or u.username).split()[:2]),
             }
-            if u.role in ("nurse", "admin"):
+            role = (u.role or "").lower()
+            if role == "doctor":
+                landing = "/discharge-portal"
+            elif role == "nurse":
                 landing = "/"
-            elif u.role == "pharmacy":
+            elif role == "admin":
+                landing = "/ward"
+            elif role == "pharmacy":
                 landing = "/pharmacy"
             else:
                 landing = "/ward"
@@ -168,10 +199,27 @@ async def dashboard_data(request: Request):
         clearing  = sum(1 for b in beds if b.status == "Clearing")
         total     = len(beds)
 
-        beds_list = [
-            {"bed_id": b.bed_id, "ward": b.ward, "status": b.status}
-            for b in beds
-        ]
+        # Join patients so the Ward Dashboard can show rich bed cards
+        patients        = db.query(Patient).all()
+        patient_by_bed  = {p.bed_id: p for p in patients}
+
+        beds_list = []
+        for b in beds:
+            bed_data: dict = {"bed_id": b.bed_id, "ward": b.ward, "status": b.status}
+            if b.status == "Occupied":
+                pt = patient_by_bed.get(b.bed_id)
+                if pt:
+                    summary = pt.ai_triage_summary or ""
+                    # Strip the "ADMISSION REQUIRED" sentinel prefix before sending to frontend
+                    import re as _re
+                    clean_summary = _re.sub(r"^ADMISSION REQUIRED\s*", "", summary, flags=_re.IGNORECASE).strip()
+                    bed_data["patient"] = {
+                        "name":              pt.name or "Unknown Patient",
+                        "patient_id":        pt.patient_id,
+                        "triage_priority":   pt.triage_priority or "",
+                        "ai_triage_summary": clean_summary,
+                    }
+            beds_list.append(bed_data)
 
         # Per-ward occupancy breakdown
         ward_map: dict = {}
@@ -223,8 +271,7 @@ async def dashboard_data(request: Request):
                     "tca_plan":         r.tca_plan or "",
                     "mo_name":          r.mo_name or "",
                     "department":       r.department or "",
-                    "discharged_at":    r.discharged_at.strftime("%d %b %Y, %I:%M %p")
-                                        if r.discharged_at else "—",
+                    "discharged_at":    _fmt_myt(r.discharged_at) or "—",
                     "discharge_status": r.discharge_status or "Ready for Bed Release",
                     "pharmacy_status":  r.pharmacy_status  or "Pending",
                 }
@@ -316,9 +363,18 @@ async def admit_patient(payload: AdmitRequest):
     Doctor assignment is validated and stored.
     """
     from fastapi import HTTPException
-    pid = payload.patient_id.strip() or f"P-{str(uuid.uuid4())[:6].upper()}"
-
     with Session(engine) as session:
+        raw_pid = (payload.patient_id or "").strip().upper()
+        # Preserve enterprise IDs from pre-arrival lookup. Any legacy/random/non-HKL
+        # client-generated value is ignored and replaced by the shared generator.
+        if re.fullmatch(r"HKL-\d{8}", raw_pid):
+            pid = raw_pid
+        else:
+            pid = generate_patient_id(session)
+
+        # Hard-stop duplicate admissions for the same enterprise reference.
+        if session.query(Patient).filter(Patient.patient_id == pid).first():
+            return {"success": False, "error": f"Patient ID '{pid}' is already admitted."}
         # ── Validate assigned doctor ─────────────────────────────────────────
         doctor_username = payload.assigned_doctor_username.strip()
         doctor_name     = ""
@@ -340,10 +396,12 @@ async def admit_patient(payload: AdmitRequest):
                     return match
             return q.first()
 
+        preferred_ward = (payload.preferred_ward or "").strip()
+        # Strongly prioritise the AI-recommended ward before global fallback.
         bed = (
-            pick_bed("Empty", payload.preferred_ward)
+            pick_bed("Empty", preferred_ward)
+            or pick_bed("Clearing", preferred_ward)
             or pick_bed("Empty")
-            or pick_bed("Clearing", payload.preferred_ward)
             or pick_bed("Clearing")
         )
 
@@ -391,38 +449,60 @@ async def admitted_patients(request: Request):
     if not current_user or current_user.get("role") not in ("doctor", "admin"):
         return []
 
-    is_doctor = current_user.get("role") == "doctor"
-
     with Session(engine) as session:
-        rows = session.query(Patient).order_by(Patient.admitted_at.desc()).all()
-        result = []
-        for p in rows:
-            # Doctor: only see their own assigned patients
-            if is_doctor and (p.assigned_doctor_username or "") != current_user.get("username", ""):
-                continue
-            bed = session.get(Bed, p.bed_id)
-            if bed and bed.status in ("Occupied", "Clearing"):
-                result.append({
-                    "patient_id":               p.patient_id,
-                    "name":                     p.name or "Anonymous",
-                    "bed_id":                   p.bed_id,
-                    "ward":                     bed.ward,
-                    "department":               p.department or bed.ward,
-                    "assigned_doctor_username": p.assigned_doctor_username or "",
-                    "assigned_doctor_name":     p.assigned_doctor_name     or "",
-                    "patient_phone":            p.patient_phone            or "",
-                    "nok_phone":                p.nok_phone                or "",
-                    "ic_number":                p.ic_number                or "",
-                    "date_of_birth":            p.date_of_birth            or "",
-                    "age":                      p.age                      or "",
-                    "triage_priority":          p.triage_priority          or "",
-                    "admission_notes":          p.admission_notes          or "",
-                    "ai_triage_summary":        p.ai_triage_summary        or "",
-                    "admitted_at":              p.admitted_at.strftime("%d %b %Y, %I:%M %p")
-                                                if p.admitted_at else "—",
-                    "label":                    f"{p.patient_id} — {p.bed_id} ({bed.ward})",
-                })
-        return result
+        return _build_admitted_patient_list(session, current_user)
+
+
+def _bed_sort_key(bed_id: str) -> tuple[str, int, str]:
+    bid = (bed_id or "").strip()
+    m = re.match(r"^([A-Za-z]+)(\d+)$", bid)
+    if not m:
+        return ("ZZZ", 10**9, bid)
+    return (m.group(1).upper(), int(m.group(2)), bid)
+
+
+def _build_admitted_patient_list(session: Session, current_user: dict) -> list[dict]:
+    is_doctor = (current_user.get("role") or "").lower() == "doctor"
+    rows = session.query(Patient).order_by(Patient.admitted_at.desc()).all()
+    result: list[dict] = []
+    for p in rows:
+        # Doctor: only see their own assigned patients
+        if is_doctor and (p.assigned_doctor_username or "") != current_user.get("username", ""):
+            continue
+        bed = session.get(Bed, p.bed_id)
+        if bed and bed.status in ("Occupied", "Clearing"):
+            result.append({
+                "patient_id":               p.patient_id,
+                "name":                     p.name or "Anonymous",
+                "bed_id":                   p.bed_id,
+                "ward":                     bed.ward,
+                "department":               p.department or bed.ward,
+                "assigned_doctor_username": p.assigned_doctor_username or "",
+                "assigned_doctor_name":     p.assigned_doctor_name     or "",
+                "patient_phone":            p.patient_phone            or "",
+                "nok_phone":                p.nok_phone                or "",
+                "ic_number":                p.ic_number                or "",
+                "date_of_birth":            p.date_of_birth            or "",
+                "age":                      p.age                      or "",
+                "triage_priority":          p.triage_priority          or "",
+                "admission_notes":          p.admission_notes          or "",
+                "ai_triage_summary":        p.ai_triage_summary        or "",
+                "admitted_at":              p.admitted_at.strftime("%d %b %Y, %I:%M %p")
+                                            if p.admitted_at else "—",
+                # Ward is represented by <optgroup>, so option labels stay clean.
+                "label":                    f"{p.bed_id} — {(p.name or 'Anonymous')} ({p.patient_id})",
+            })
+    result.sort(key=lambda x: ((x.get("ward") or "").lower(), _bed_sort_key(x.get("bed_id") or ""), (x.get("name") or "").lower()))
+    return result
+
+
+def _group_patients_by_ward(patients: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    for p in patients:
+        ward = p.get("ward") or "Unassigned"
+        grouped.setdefault(ward, []).append(p)
+    wards = sorted(grouped.keys(), key=lambda w: w.lower())
+    return [{"ward": w, "patients": grouped[w]} for w in wards]
 
 
 # ── Pharmacy queue ────────────────────────────────────────────────────────────
@@ -433,7 +513,7 @@ async def pharmacy_queue(request: Request):
     user = _user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    role     = user.get("role")
+    role     = (user.get("role") or "").lower()
     username = user.get("username")
     if role not in ("pharmacy", "admin", "doctor"):
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -466,7 +546,7 @@ async def pharmacy_queue(request: Request):
                 "pharmacy_status":  r.pharmacy_status   or "Pending",
                 "payment_status":   r.payment_status    or "Pending",
                 "discharge_status": r.discharge_status  or "Ready for Bed Release",
-                "discharged_at":    r.discharged_at.strftime("%d %b %Y, %I:%M %p") if r.discharged_at else "—",
+                "discharged_at":    _fmt_myt(r.discharged_at) or "—",
                 "can_update_payment": False,
             })
         return result
@@ -582,7 +662,10 @@ async def finalize_discharge(record_id: int, request: Request):
 
 # ── PDF discharge report ──────────────────────────────────────────────────────
 
-_MYT = datetime.timezone(datetime.timedelta(hours=8))
+try:
+    _MYT = ZoneInfo("Asia/Kuala_Lumpur")
+except Exception:
+    _MYT = datetime.timezone(datetime.timedelta(hours=8))
 
 def _to_myt(dt: datetime.datetime | None) -> datetime.datetime | None:
     """Convert a naive UTC datetime (as stored by SQLAlchemy) to MYT (UTC+8)."""
@@ -592,7 +675,7 @@ def _to_myt(dt: datetime.datetime | None) -> datetime.datetime | None:
         dt = dt.replace(tzinfo=datetime.timezone.utc)
     return dt.astimezone(_MYT)
 
-def _fmt_myt(dt: datetime.datetime | None, fmt: str = "%d %b %Y, %I:%M %p MYT") -> str | None:
+def _fmt_myt(dt: datetime.datetime | None, fmt: str = "%d %b %Y, %I:%M %p") -> str | None:
     """Format a UTC datetime as a MYT string, or return None if dt is None."""
     converted = _to_myt(dt)
     return converted.strftime(fmt) if converted else None
@@ -624,7 +707,8 @@ def _build_pdf(rec: DischargeRecord, patient) -> bytes:
 
     def lv(label, value):
         """2-cell [label, value] row for the detail table."""
-        return [Paragraph(label, label_s), Paragraph(str(value) if value else "—", body_s)]
+        display = str(value).strip() if value not in (None, "") else ""
+        return [Paragraph(label, label_s), Paragraph(display if display else "Not provided", body_s)]
 
     story = []
 
@@ -724,7 +808,7 @@ def _build_pdf(rec: DischargeRecord, patient) -> bytes:
     story.append(Spacer(1, 3*mm))
 
     story.append(Paragraph("Clinical Summary", head_s))
-    story.append(Paragraph(rec.clinical_summary or "—", body_s))
+    story.append(Paragraph((rec.clinical_summary or "").strip() or "Not provided", body_s))
     story.append(Spacer(1, 3*mm))
 
     story.append(Paragraph("Medications Prescribed", head_s))
@@ -737,7 +821,7 @@ def _build_pdf(rec: DischargeRecord, patient) -> bytes:
     story.append(Spacer(1, 3*mm))
 
     story.append(Paragraph("TCA / Follow-up Plan", head_s))
-    story.append(Paragraph(rec.tca_plan or "—", body_s))
+    story.append(Paragraph((rec.tca_plan or "").strip() or "Not provided", body_s))
 
     # ── Footer ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 10*mm))
@@ -790,7 +874,7 @@ async def reset_demo(request: Request):
     """
     from fastapi import HTTPException
     current_user = _user(request)
-    if not current_user or current_user.get("role") != "admin":
+    if not current_user or (current_user.get("role") or "").lower() != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
     with Session(engine) as session:
         session.query(DischargeRecord).delete()
@@ -808,9 +892,18 @@ async def serve_discharge_portal(request: Request):
     user = _user(request)
     if not user:
         return _redirect_login()
-    if user["role"] not in ("doctor", "admin"):
+    if (user.get("role") or "").lower() not in ("doctor", "admin"):
         return RedirectResponse(url="/ward", status_code=303)
-    return templates.TemplateResponse(request=request, name="discharge.html", context={"user": user})
+    with Session(engine) as session:
+        admitted = _build_admitted_patient_list(session, user)
+    return templates.TemplateResponse(
+        request=request,
+        name="discharge.html",
+        context={
+            "user": user,
+            "grouped_patients": _group_patients_by_ward(admitted),
+        },
+    )
 
 
 @app.get("/pharmacy", response_class=HTMLResponse)
@@ -828,7 +921,8 @@ async def serve_history(request: Request):
     user = _user(request)
     if not user:
         return _redirect_login()
-    if user["role"] not in ("doctor", "admin", "nurse"):
+    # Discharge Records audit trail — doctors & admins only (not nurses)
+    if (user.get("role") or "").lower() not in ("doctor", "admin"):
         return RedirectResponse(url="/ward", status_code=303)
     return templates.TemplateResponse(request=request, name="history.html", context={"user": user})
 
@@ -1085,35 +1179,60 @@ class PreArrivalRequest(BaseModel):
 
 
 @app.post("/api/pre-arrival")
-async def save_pre_arrival(payload: PreArrivalRequest):
+async def save_pre_arrival(
+    patient_name:       str        = Form(""),
+    ic_number:          str        = Form(""),
+    patient_phone:      str        = Form(""),
+    symptoms:           str        = Form(""),    # optional — patient may supply only a file
+    ai_summary:         str        = Form(""),
+    admission_required: str        = Form("false"),
+    available_beds:     str        = Form(""),
+    attachment:         UploadFile = File(None),
+):
     """Called by patient.html when 'Notify Hospital' is clicked. No auth required."""
-    if not payload.ref_id.strip() or not payload.symptoms.strip():
-        raise HTTPException(status_code=400, detail="ref_id and symptoms are required.")
+    symptoms   = symptoms.strip()
+    ai_summary = ai_summary.strip()
+
+    # For file-only submissions the textarea is blank; fall back to the AI summary
+    # so the nurse's Chief Complaint field is always populated with something useful.
+    stored_symptoms = symptoms or ai_summary or "No text description provided — see attached file."
 
     with Session(engine) as session:
-        # Prevent duplicate ref IDs
-        existing = session.query(PreArrivalTriage).filter(
-            PreArrivalTriage.ref_id == payload.ref_id
-        ).first()
-        if existing:
-            return {"success": True, "ref_id": payload.ref_id, "note": "already_saved"}
+        ref_id = generate_patient_id(session)
+
+        # ── Save attachment if provided ──────────────────────────────────────
+        attachment_path: str | None = None
+        if attachment and attachment.filename:
+            ext       = pathlib.Path(attachment.filename).suffix.lower()
+            safe_name = f"{ref_id}{ext}"
+            dest      = UPLOAD_DIR / safe_name
+            with dest.open("wb") as fh:
+                shutil.copyfileobj(attachment.file, fh)
+            attachment_path = f"uploads/{safe_name}"   # served under /static/
+
+        avail: int | None = None
+        try:
+            avail = int(available_beds) if available_beds.strip() else None
+        except (ValueError, AttributeError):
+            avail = None
 
         record = PreArrivalTriage(
-            ref_id             = payload.ref_id,
-            patient_name       = payload.patient_name.strip()  or None,
-            ic_number          = payload.ic_number.strip()     or None,
-            patient_phone      = payload.patient_phone.strip() or None,
-            symptoms           = payload.symptoms.strip(),
-            ai_summary         = payload.ai_summary.strip()    or None,
-            admission_required = "true" if payload.admission_required else "false",
-            available_beds     = payload.available_beds,
+            ref_id             = ref_id,
+            patient_name       = patient_name.strip()  or None,
+            ic_number          = ic_number.strip()     or None,
+            patient_phone      = patient_phone.strip() or None,
+            symptoms           = stored_symptoms,          # never blank
+            ai_summary         = ai_summary             or None,
+            admission_required = "true" if admission_required.lower() == "true" else "false",
+            available_beds     = avail,
+            attachment_path    = attachment_path,
             status             = "Pending",
             created_at         = datetime.datetime.utcnow(),
         )
         session.add(record)
         session.commit()
 
-    return {"success": True, "ref_id": payload.ref_id}
+    return {"success": True, "ref_id": ref_id}
 
 
 @app.get("/api/lookup-reference/{ref_id}")
@@ -1126,7 +1245,7 @@ async def lookup_reference(ref_id: str, request: Request):
     user = _user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if user.get("role") not in ("nurse", "admin", "doctor"):
+    if (user.get("role") or "").lower() not in ("nurse", "admin", "doctor"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     with Session(engine) as session:
@@ -1145,6 +1264,8 @@ async def lookup_reference(ref_id: str, request: Request):
             rec.claimed_by = user.get("username")
             session.commit()
 
+        attachment_url = f"/static/{rec.attachment_path}" if rec.attachment_path else None
+
         return {
             "ref_id":             rec.ref_id,
             "patient_name":       rec.patient_name       or "",
@@ -1158,23 +1279,159 @@ async def lookup_reference(ref_id: str, request: Request):
             # True ONLY if nurse has previously looked this record up
             "already_claimed":    was_already_claimed,
             "created_at":         rec.created_at.strftime("%d %b %Y, %I:%M %p") if rec.created_at else "—",
+            "attachment_url":     attachment_url,
         }
 
 
+_TRIAGE_SYSTEM_PROMPT = (
+    "You are an experienced triage nurse at a busy hospital. "
+    "A patient will describe their symptoms. "
+    "Assess whether they require hospital admission.\n\n"
+    "Rules:\n"
+    "1. The very first line of your response must be EXACTLY one of:\n"
+    "   'ADMISSION REQUIRED' or 'ADMISSION NOT REQUIRED'\n"
+    "2. Then write 2-4 concise sentences explaining the likely condition "
+    "and your reasoning.\n"
+    "3. Do not ask follow-up questions or add disclaimers.\n"
+    "4. Based on the clinical assessment, you MUST recommend the most appropriate ward. "
+    "Choose ONLY from this exact list: [ICU, Medical, Surgical, Orthopaedic, Paediatric, Obstetrics & Gynaecology].\n"
+    "5. End your response with a new line exactly like this: RECOMMENDED_WARD: [Your Choice]."
+)
+
+
+def _parse_triage_response(ai_text: str, engine) -> TriageResponse:
+    """Parse the AI triage text and query TiDB for bed availability."""
+    lines = ai_text.split("\n")
+    first_line = lines[0].upper() if lines else ""
+    admission_required = "ADMISSION REQUIRED" in first_line and "NOT" not in first_line
+
+    allowed_wards = {
+        "ICU",
+        "Medical",
+        "Surgical",
+        "Orthopaedic",
+        "Paediatric",
+        "Obstetrics & Gynaecology",
+    }
+    recommended_ward: str | None = None
+    for ln in reversed(lines):
+        if ln.upper().startswith("RECOMMENDED_WARD:"):
+            ward = ln.split(":", 1)[1].strip()
+            if ward in allowed_wards:
+                recommended_ward = ward
+            break
+
+    # Keep ward recommendation as structured metadata only; remove from narrative text.
+    cleaned_lines: list[str] = []
+    for ln in lines:
+        if ln.upper().startswith("RECOMMENDED_WARD:"):
+            continue
+        ln = re.sub(
+            r"\s*RECOMMENDED_WARD:\s*(ICU|Medical|Surgical|Orthopaedic|Paediatric|Obstetrics\s*&\s*Gynaecology)\s*$",
+            "",
+            ln,
+            flags=re.IGNORECASE,
+        ).rstrip()
+        cleaned_lines.append(ln)
+    clean_summary = "\n".join(cleaned_lines).strip()
+
+    available_beds: int | None = None
+    total_beds: int | None = None
+    if admission_required:
+        with Session(engine) as db_session:
+            available_beds = (
+                db_session.query(Bed).filter(Bed.status.in_(["Empty", "Clearing"])).count()
+            )
+            total_beds = db_session.query(Bed).count()
+
+    return TriageResponse(
+        admission_required=admission_required,
+        ai_summary=clean_summary,
+        recommended_ward=recommended_ward,
+        available_beds=available_beds,
+        total_beds=total_beds,
+    )
+
+
 @app.post("/api/triage", response_model=TriageResponse)
-async def triage(payload: SymptomRequest):
+async def triage(
+    symptoms: str | None = Form(None),   # explicitly optional — file-only submissions are valid
+    image:    UploadFile = File(None),
+):
     """
-    Accept patient symptoms, run Groq triage, and optionally query TiDB for
-    live bed availability.
+    Accept patient symptoms (text and/or image), run AI triage, and return
+    a structured assessment with live bed availability.
+
+    Routing logic:
+      • Image uploaded (image/*) → Gemini 2.5 Flash multimodal analysis.
+      • Text only (or non-image file) → Groq LLaMA-3.3-70b (fast text path).
+    At least one of symptoms or image must be present.
     """
-    symptoms = payload.symptoms.strip()
-    if not symptoms:
+    # Normalise: treat None, whitespace-only, and empty string identically
+    symptoms  = (symptoms or "").strip()
+    has_image = bool(image and image.filename)
+
+    if not symptoms and not has_image:
         return TriageResponse(
             admission_required=False,
-            ai_summary="No symptoms were provided. Please describe how you feel.",
+            ai_summary="No symptoms or attachment provided. Please describe your symptoms or attach a document.",
         )
 
-    # --- AI triage via Groq ---
+    # ── Route A: Image OR PDF → Gemini 2.5 Flash multimodal/document ────────
+    # Gemini 2.5 Flash supports both image/* and application/pdf via inline base64.
+    _GEMINI_TYPES = ("image/", "application/pdf")
+    if has_image and any((image.content_type or "").startswith(t) for t in _GEMINI_TYPES):
+        if not os.getenv("GOOGLE_API_KEY"):
+            return TriageResponse(
+                admission_required=False,
+                ai_summary="Image analysis unavailable: GOOGLE_API_KEY is not configured on the server.",
+            )
+
+        is_pdf = (image.content_type or "").startswith("application/pdf")
+        media_label = "document/PDF" if is_pdf else "image/photo"
+
+        # Always guarantee a non-empty prompt for Gemini
+        img_prompt = symptoms or (
+            f"The patient did not provide a text description but attached a medical {media_label}. "
+            f"Please analyze the {media_label} to determine the clinical presentation and triage severity."
+        )
+
+        try:
+            img_bytes = await image.read()
+            img_b64   = base64.b64encode(img_bytes).decode()
+            mime      = image.content_type  # e.g. "image/jpeg" or "application/pdf"
+
+            resp = await _gemini.ainvoke([
+                SystemMessage(content=_TRIAGE_SYSTEM_PROMPT),
+                HumanMessage(content=[
+                    {
+                        "type":      "image_url",
+                        "image_url": {"url": f"data:{mime};base64,{img_b64}"},
+                    },
+                    {"type": "text", "text": img_prompt},
+                ]),
+            ])
+            ai_response = resp.content.strip()
+        except Exception as exc:
+            print(f"[triage] Gemini {media_label} analysis failed: {exc}")
+            ai_response = (
+                "ADMISSION NOT REQUIRED\n"
+                f"{media_label.capitalize()} analysis could not be completed at this time. "
+                "Please proceed to the ED directly if your symptoms are urgent, "
+                "or describe your symptoms in text and try again."
+            )
+
+        return _parse_triage_response(ai_response, engine)
+
+    # ── Route B: Text (or non-image file such as PDF) → Groq LLaMA ──────────
+    # Task 3 — always guarantee a non-empty prompt for Groq
+    if not symptoms:
+        symptoms = (
+            "The patient did not provide a text description but has attached a supporting document "
+            "(e.g. a PDF referral or lab result). Based on this limited information, please recommend "
+            "they attend the ED for a proper clinical assessment."
+        )
+
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         return TriageResponse(
@@ -1182,52 +1439,25 @@ async def triage(payload: SymptomRequest):
             ai_summary="Server configuration error: GROQ_API_KEY is not set.",
         )
 
-    client = AsyncGroq(api_key=api_key)
+    # Task 4 — wrap Groq call so network/API failures return clean JSON
+    try:
+        client = AsyncGroq(api_key=api_key)
+        chat   = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": _TRIAGE_SYSTEM_PROMPT},
+                {"role": "user",   "content": f"Patient symptoms: {symptoms}"},
+            ],
+            temperature=0.3,
+            max_tokens=300,
+        )
+        ai_response = chat.choices[0].message.content.strip()
+    except Exception as exc:
+        print(f"[triage] Groq API call failed: {exc}")
+        ai_response = (
+            "ADMISSION NOT REQUIRED\n"
+            "The AI triage service is temporarily unavailable. "
+            "Please proceed to the ED directly if your symptoms are urgent."
+        )
 
-    system_prompt = (
-        "You are an experienced triage nurse at a busy hospital. "
-        "A patient will describe their symptoms. "
-        "Assess whether they require hospital admission.\n\n"
-        "Rules:\n"
-        "1. The very first line of your response must be EXACTLY one of:\n"
-        "   'ADMISSION REQUIRED' or 'ADMISSION NOT REQUIRED'\n"
-        "2. Then write 2-4 concise sentences explaining the likely condition "
-        "and your reasoning.\n"
-        "3. Do not ask follow-up questions or add disclaimers."
-    )
-
-    chat = await client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Patient symptoms: {symptoms}"},
-        ],
-        temperature=0.3,
-        max_tokens=300,
-    )
-
-    ai_response = chat.choices[0].message.content.strip()
-    first_line = ai_response.split("\n")[0].upper()
-    admission_required = (
-        "ADMISSION REQUIRED" in first_line and "NOT" not in first_line
-    )
-
-    # --- Bed availability from TiDB (only when admission is needed) ---
-    available_beds: int | None = None
-    total_beds: int | None = None
-
-    if admission_required:
-        with Session(engine) as db_session:
-            available_beds = (
-                db_session.query(Bed)
-                .filter(Bed.status.in_(["Empty", "Clearing"]))
-                .count()
-            )
-            total_beds = db_session.query(Bed).count()
-
-    return TriageResponse(
-        admission_required=admission_required,
-        ai_summary=ai_response,
-        available_beds=available_beds,
-        total_beds=total_beds,
-    )
+    return _parse_triage_response(ai_response, engine)

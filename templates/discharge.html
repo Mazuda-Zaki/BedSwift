@@ -133,11 +133,11 @@
       {% if user.role == 'admin' %}
       <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
       {% endif %}
-      <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
       <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
-      {% if user.role in ('doctor', 'admin', 'nurse') %}
+      {% if user.role|lower in ['doctor', 'admin'] %}
       <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
       {% endif %}
+      <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
       {% if user.role == 'admin' %}
       <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
       {% endif %}
@@ -193,7 +193,18 @@
           </button>
         </div>
         <select id="patient-select" class="field-input" onchange="onPatientSelect(this.value)">
-          <option value="">— Loading admitted patients… —</option>
+          <option value="">— Select an admitted patient —</option>
+          {% if grouped_patients %}
+            {% for grp in grouped_patients %}
+              <optgroup label="{{ grp.ward }}">
+                {% for p in grp.patients %}
+                  <option value="{{ p.patient_id }}">{{ p.bed_id }} — {{ p.name }} ({{ p.patient_id }})</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          {% else %}
+            <option value="">— No admitted patients — use ED Triage first —</option>
+          {% endif %}
         </select>
         <p class="text-xs text-gray-400 mt-2">Only patients currently in an Occupied or Clearing bed are shown.</p>
       </section>
@@ -212,19 +223,19 @@
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient Name</p>
-              <p id="as-name" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-name" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient ID</p>
-              <p id="as-pid" class="text-sm font-semibold text-blue-700 font-mono">—</p>
+              <p id="as-pid" class="text-sm font-semibold text-blue-700 font-mono">Not provided</p>
             </div>
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Date of Birth</p>
-              <p id="as-dob" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-dob" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Age</p>
-              <p id="as-age" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-age" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
           </div>
           <!-- Row 2: Bed / Ward / Admitted / Priority -->
@@ -250,15 +261,15 @@
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Patient Phone</p>
-              <p id="as-phone" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-phone" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
             <div>
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">NOK Phone</p>
-              <p id="as-nok" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-nok" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
             <div class="md:col-span-2">
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-0.5">Assigned Doctor</p>
-              <p id="as-doctor" class="text-sm font-semibold text-gray-800">—</p>
+              <p id="as-doctor" class="text-sm font-semibold text-gray-800">Not provided</p>
             </div>
           </div>
           <!-- Row 4: AI Triage Summary (primary) + raw notes (collapsible fallback) -->
@@ -270,20 +281,20 @@
                 <span class="text-[9px] bg-indigo-50 text-indigo-400 border border-indigo-100 px-1.5 py-0.5 rounded-full font-semibold tracking-wide">AI Generated</span>
               </div>
               <div id="as-ai-summary"
-                class="text-sm text-gray-700 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">—</div>
+                class="text-sm text-gray-700 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">Not provided</div>
             </div>
             <!-- Raw nurse notes — collapsible, shown only when AI summary exists -->
             <div id="as-raw-notes-row" class="hidden mt-2">
               <button onclick="toggleRawNotes()" class="text-[10px] text-gray-400 hover:text-gray-600 font-semibold uppercase tracking-wide flex items-center gap-1 transition-colors">
                 <span id="raw-notes-chev">▶</span> Raw Nurse Notes
               </button>
-              <div id="as-notes" class="hidden mt-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 leading-relaxed whitespace-pre-line">—</div>
+              <div id="as-notes" class="hidden mt-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 leading-relaxed whitespace-pre-line">Not provided</div>
             </div>
             <!-- Fallback: only raw notes when no AI summary -->
             <div id="as-fallback-row" class="hidden">
               <p class="text-[10px] text-blue-400 font-semibold uppercase tracking-wide mb-1.5">Chief Complaint / Admission Notes</p>
               <div id="as-notes-fallback"
-                class="text-sm text-gray-700 bg-white border border-blue-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">—</div>
+                class="text-sm text-gray-700 bg-white border border-blue-100 rounded-xl px-4 py-3 leading-relaxed min-h-[48px] whitespace-pre-line">Not provided</div>
             </div>
           </div>
         </div>
@@ -689,14 +700,35 @@
         const sel  = document.getElementById('patient-select');
         window._patientData = Array.isArray(data) ? data : [];
 
+        const esc = (v) => String(v ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+
         if (!window._patientData.length) {
           sel.innerHTML = '<option value="">— No admitted patients — use ED Triage first —</option>';
           return;
         }
 
+        // Backend already sorts by ward then bed_id; this groups into <optgroup>.
+        const byWard = {};
+        window._patientData.forEach(p => {
+          const ward = p.ward || 'Unassigned';
+          if (!byWard[ward]) byWard[ward] = [];
+          byWard[ward].push(p);
+        });
+
+        const wardOrder = Object.keys(byWard).sort((a, b) => a.localeCompare(b));
         sel.innerHTML = '<option value="">— Select an admitted patient —</option>' +
-          window._patientData.map(p =>
-            `<option value="${p.patient_id}">${p.patient_id} — ${p.bed_id} (${p.ward})${p.name && p.name !== 'Anonymous' ? ' · ' + p.name : ''}</option>`
+          wardOrder.map(ward =>
+            `<optgroup label="${esc(ward)}">` +
+              byWard[ward].map(p => {
+                const name = (p.name && p.name !== 'Anonymous') ? p.name : 'Anonymous';
+                return `<option value="${esc(p.patient_id)}">${esc(p.bed_id)} — ${esc(name)} (${esc(p.patient_id)})</option>`;
+              }).join('') +
+            '</optgroup>'
           ).join('');
       } catch (e) {
         document.getElementById('patient-select').innerHTML =
@@ -734,11 +766,11 @@
       badge.textContent = `${p.patient_id}  ·  ${p.name || 'Anonymous'}  ·  ${p.bed_id} (${p.ward})`;
       badge.className   = 'field-input bg-emerald-50 text-emerald-700 text-xs font-semibold leading-tight py-2.5';
 
-      const nr = 'Not recorded';
+      const nr = 'Not provided';
 
       // ── Populate Admission Summary card ───────────────────────────────────
-      document.getElementById('as-name').textContent     = p.name           || '—';
-      document.getElementById('as-pid').textContent      = p.patient_id     || '—';
+      document.getElementById('as-name').textContent     = p.name           || nr;
+      document.getElementById('as-pid').textContent      = p.patient_id     || nr;
       document.getElementById('as-dob').textContent      = p.date_of_birth  || nr;
       document.getElementById('as-age').textContent      = p.age            ? `${p.age} yrs old` : nr;
       document.getElementById('as-bed').textContent      = p.bed_id         || '—';
@@ -747,7 +779,7 @@
       document.getElementById('as-priority').textContent = p.triage_priority || nr;
       document.getElementById('as-phone').textContent    = p.patient_phone  || nr;
       document.getElementById('as-nok').textContent      = p.nok_phone      || nr;
-      document.getElementById('as-doctor').textContent   = p.assigned_doctor_name || '—';
+      document.getElementById('as-doctor').textContent   = p.assigned_doctor_name || nr;
       // AI triage summary vs raw notes display logic
       const aiSummary  = (p.ai_triage_summary || '').trim();
       const rawNotes   = (p.admission_notes   || '').trim();

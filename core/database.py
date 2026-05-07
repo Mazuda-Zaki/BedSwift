@@ -145,6 +145,7 @@ class PreArrivalTriage(Base):
     available_beds     = Column(Integer,      nullable=True)
     status             = Column(String(30),   nullable=False, default="Pending")  # Pending | Claimed
     claimed_by         = Column(String(100),  nullable=True)   # nurse username who claimed it
+    attachment_path    = Column(String(500),  nullable=True)   # relative path under static/uploads/
     created_at         = Column(DateTime,     default=datetime.datetime.utcnow)
 
     def __repr__(self) -> str:
@@ -210,9 +211,9 @@ DEFAULT_BEDS = [
 
 
 DEFAULT_USERS = [
-    {"username": "nurse1",    "password": "nurse123",    "role": "nurse",    "full_name": "Nurse Azura Binti Hamid"},
-    {"username": "dr.ahmad",  "password": "doctor123",   "role": "doctor",   "full_name": "Dr. Ahmad Razali"},
-    {"username": "admin",     "password": "admin123",    "role": "admin",    "full_name": "System Administrator"},
+    {"username": "azura.h@hkl.moh.gov.my",       "password": "Hkl@Nrs2026!",  "role": "nurse",    "full_name": "Nurse Azura Binti Hamid"},
+    {"username": "dr.ahmad.r@hkl.moh.gov.my",    "password": "Hkl@Med2026!",  "role": "doctor",   "full_name": "Dr. Ahmad Razali"},
+    {"username": "admin.ops@hkl.moh.gov.my",     "password": "Hkl@Ops2026!",  "role": "admin",    "full_name": "System Administrator"},
     {"username": "pharmacy1", "password": "pharmacy123", "role": "pharmacy", "full_name": "Pharmacy Counter"},
 ]
 
@@ -239,6 +240,9 @@ def _safe_add_columns() -> None:
     Runs only if the column does not already exist — no data loss.
     """
     migrations = {
+        "Pre_Arrival_Triage": [
+            ("attachment_path", "VARCHAR(500)"),
+        ],
         "Patients": [
             ("assigned_doctor_username", "VARCHAR(100)"),
             ("assigned_doctor_name",     "VARCHAR(200)"),

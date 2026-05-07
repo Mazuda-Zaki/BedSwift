@@ -121,13 +121,13 @@
     <nav class="flex-1 min-h-0 px-3 py-3 flex flex-col overflow-y-auto overflow-x-hidden">
       <div class="space-y-0.5">
         <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
-        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
         {% if user.role == 'admin' %}
         <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
         {% endif %}
-        {% if user.role in ('doctor', 'admin') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
         {% endif %}
+        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
         {% if user.role == 'admin' %}
         <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
         {% endif %}
@@ -189,7 +189,7 @@
         </div>
         <div class="flex gap-2">
           <input id="ref-id-input" type="text"
-            placeholder="e.g. REF-A3X7K2"
+            placeholder="e.g. HKL-20260017"
             class="field-input flex-1 uppercase tracking-widest font-mono text-indigo-900 placeholder:normal-case placeholder:tracking-normal placeholder:font-sans py-2 text-sm"
             style="text-transform:uppercase"
             onkeydown="if(event.key==='Enter') lookupReference()" />
@@ -267,7 +267,22 @@
 
           <!-- Symptoms -->
           <div class="flex flex-col">
-            <label class="field-label">Chief Complaint &amp; Clinical Presentation</label>
+            <div class="flex items-center justify-between mb-[5px]">
+              <label class="field-label !mb-0">Chief Complaint &amp; Clinical Presentation</label>
+              <!-- Shown only when a pre-arrival attachment exists for this patient -->
+              <a id="btn-view-attachment"
+                href="#"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="hidden items-center gap-1.5 text-xs font-semibold text-indigo-600
+                       bg-indigo-50 hover:bg-indigo-100 border border-indigo-200
+                       px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 002.828 2.828L18 9.828M7 7H4a1 1 0 00-1 1v10a1 1 0 001 1h10a1 1 0 001-1v-3"/>
+                </svg>
+                View Patient Attachment
+              </a>
+            </div>
             <textarea id="symptoms-input" rows="9"
               placeholder="Describe presenting symptoms in detail — onset, severity, associated symptoms, vital signs, relevant history…"
               class="field-input flex-1 resize-none leading-relaxed"></textarea>
@@ -469,6 +484,20 @@
       }
     }
 
+    // ── Attachment button helpers ──────────────────────────────────────────
+    function _showAttachmentBtn(url) {
+      const btn = document.getElementById('btn-view-attachment');
+      btn.href = url;
+      btn.classList.remove('hidden');
+      btn.classList.add('inline-flex');
+    }
+    function _hideAttachmentBtn() {
+      const btn = document.getElementById('btn-view-attachment');
+      btn.classList.add('hidden');
+      btn.classList.remove('inline-flex');
+      btn.href = '#';
+    }
+
     // ── Fast-Track lookup ──────────────────────────────────────────────────
     function setLookupLoading(on) {
       document.getElementById('lookup-btn').disabled = on;
@@ -488,6 +517,13 @@
       setTimeout(() => toast.classList.add('hidden'), 3500);
     }
 
+    function stripWardTag(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/\n?\s*RECOMMENDED_WARD:\s*(ICU|Medical|Surgical|Orthopaedic|Paediatric|Obstetrics\s*&\s*Gynaecology)\s*$/i, '')
+        .trim();
+    }
+
     async function lookupReference() {
       const raw = document.getElementById('ref-id-input').value.trim().toUpperCase();
       const resultEl = document.getElementById('fasttrack-result');
@@ -504,6 +540,8 @@
         document.getElementById('bed-panel').classList.add('hidden');
         document.getElementById('gp-panel').classList.add('hidden');
         _lastTriageResult = null;
+        // Hide attachment button whenever form is cleared for safety
+        _hideAttachmentBtn();
       };
       if (!raw) {
         resultEl.innerHTML = '<p class="text-xs text-rose-500 font-medium">Please enter a Reference ID.</p>';
@@ -540,24 +578,39 @@
         }
 
         // ── Auto-fill triage form ──
-        if (data.patient_name) document.getElementById('p-name').value = data.patient_name;
-        if (data.ic_number)    document.getElementById('p-ic').value   = data.ic_number;
-        if (data.patient_phone)document.getElementById('p-phone').value = data.patient_phone;
-        if (data.symptoms)     document.getElementById('symptoms-input').value = data.symptoms;
+        if (data.patient_name)  document.getElementById('p-name').value  = data.patient_name;
+        if (data.ic_number)     document.getElementById('p-ic').value    = data.ic_number;
+        if (data.patient_phone) document.getElementById('p-phone').value = data.patient_phone;
+
+        // Populate Chief Complaint with AI Triage Summary (professional clinical prose).
+        // Raw patient text is stored separately in the DB for audit — the nurse
+        // should always read the AI-processed version as the starting point.
+        const _clinicalText   = stripWardTag((data.ai_summary || data.symptoms || '').trim());
+        const _usedAiSummary  = !!(data.ai_summary && data.ai_summary.trim());
+        if (_clinicalText) document.getElementById('symptoms-input').value = _clinicalText;
 
         // Set triage priority based on AI recommendation
         const priority = document.getElementById('p-priority');
-        if (data.admission_required) {
-          priority.value = 'urgent';
-        }
+        if (data.admission_required) priority.value = 'urgent';
 
-        // Update char counter if it exists
+        // Sync char counter
         const symEl = document.getElementById('symptoms-input');
-        if (symEl) {
-          symEl.dispatchEvent(new Event('input'));
+        if (symEl) symEl.dispatchEvent(new Event('input'));
+
+        // Show / hide patient attachment button
+        if (data.attachment_url) {
+          _showAttachmentBtn(data.attachment_url);
+        } else {
+          _hideAttachmentBtn();
         }
 
-        // Show inline confirmation inside the fast-track panel
+        // Show inline confirmation card with source badge
+        const attachBadge = data.attachment_url
+          ? `<p class="text-xs mt-0.5"><span class="inline-flex items-center gap-1 text-indigo-600 font-semibold">📎 Attachment available — see button above</span></p>`
+          : '';
+        const sourceBadge = _usedAiSummary
+          ? `<span class="inline-flex items-center gap-1 text-violet-600 font-semibold">🤖 Chief Complaint auto-filled with AI Triage Summary</span>`
+          : `<span class="inline-flex items-center gap-1 text-amber-600 font-semibold">⚠️ No AI summary — filled with patient's raw text</span>`;
         resultEl.innerHTML = `
           <div class="flex items-start gap-3 bg-white rounded-xl px-4 py-3 border border-indigo-100 shadow-sm">
             <span class="text-emerald-500 text-lg flex-shrink-0">✓</span>
@@ -568,12 +621,19 @@
               <p class="text-xs text-slate-500 mt-0.5">
                 ${data.created_at} · Admission: ${data.admission_required ? '<span class="text-rose-600 font-bold">Required</span>' : 'Not required'}
               </p>
-              <p class="text-xs text-indigo-600 font-medium mt-1">Form auto-filled — review and complete admission below.</p>
+              <p class="text-xs mt-1">${sourceBadge}</p>
+              ${attachBadge}
             </div>
           </div>`;
         resultEl.classList.remove('hidden');
 
         showFastTrackToast('success', '✅ Pre-Arrival Data Loaded Successfully');
+
+        // Preserve the looked-up enterprise reference for final admission.
+        const lookedUpRef = raw;
+        if (/^HKL-\d{8}$/.test(lookedUpRef)) {
+          document.getElementById('admit-pid').value = lookedUpRef;
+        }
 
         // Scroll gently to the triage form
         setTimeout(() => {
@@ -610,10 +670,9 @@
 
     // ── Patient ID generator ───────────────────────────────────────────────
     function generatePID() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let id = 'P-';
-      for (let i = 0; i < 6; i++) id += chars[Math.floor(Math.random() * chars.length)];
-      return id;
+      // Server is the single source of truth for ID generation.
+      // Return empty for walk-ins so backend assigns HKL-YYYYNNNN.
+      return '';
     }
     function regeneratePID() {
       document.getElementById('admit-pid').value = generatePID();
@@ -631,12 +690,21 @@
       document.getElementById('result-section').classList.remove('show');
 
       try {
-        const res  = await fetch('/api/triage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ symptoms }),
-        });
-        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        // Must use multipart FormData — /api/triage expects Form(symptoms) + optional File(image),
+        // not JSON (JSON leaves symptoms empty and yields "No symptoms or attachment provided").
+        const fd = new FormData();
+        fd.append('symptoms', symptoms);
+        const res  = await fetch('/api/triage', { method: 'POST', body: fd });
+        if (!res.ok) {
+          let msg = `Server error ${res.status}`;
+          try {
+            const err = await res.json();
+            const d   = err.detail;
+            if (typeof d === 'string') msg = d;
+            else if (Array.isArray(d) && d[0]?.msg) msg = d.map(x => x.msg).join(' ');
+          } catch {}
+          throw new Error(msg);
+        }
         const data = await res.json();
         renderResult(data);
       } catch (err) {
@@ -650,11 +718,12 @@
     // ── Render result ──────────────────────────────────────────────────────
     function renderResult(data) {
       _lastTriageResult = data;   // cache so confirmAdmission() can read ai_summary
+      const cleanAiSummary = stripWardTag(data.ai_summary || '');
       const bedPanel = document.getElementById('bed-panel');
       const gpPanel  = document.getElementById('gp-panel');
 
       if (data.admission_required) {
-        showVerdict('red', '🔴', 'ADMISSION REQUIRED', data.ai_summary);
+        showVerdict('red', '🔴', 'ADMISSION REQUIRED', cleanAiSummary);
 
         document.getElementById('available-count').textContent = data.available_beds ?? '—';
         document.getElementById('total-count').textContent     = data.total_beds     ?? '—';
@@ -662,7 +731,9 @@
         const bedMsg = document.getElementById('bed-message');
         if ((data.available_beds ?? 0) > 0) {
           bedMsg.classList.add('hidden');
-          document.getElementById('admit-pid').value = generatePID();
+          // Keep looked-up HKL reference if present; else let backend generate.
+          const currentRef = document.getElementById('ref-id-input').value.trim().toUpperCase();
+          document.getElementById('admit-pid').value = /^HKL-\d{8}$/.test(currentRef) ? currentRef : generatePID();
           document.getElementById('admit-form').classList.remove('hidden');
           document.getElementById('admit-success').classList.add('hidden');
         } else {
@@ -675,7 +746,7 @@
         bedPanel.classList.remove('hidden');
         gpPanel.classList.add('hidden');
       } else {
-        showVerdict('green', '🟢', 'ADMISSION NOT REQUIRED', data.ai_summary);
+        showVerdict('green', '🟢', 'ADMISSION NOT REQUIRED', cleanAiSummary);
         bedPanel.classList.add('hidden');
         gpPanel.classList.remove('hidden');
       }
@@ -711,6 +782,7 @@
           body: JSON.stringify({
             patient_id:               pid,
             patient_name:             document.getElementById('p-name').value.trim(),
+            preferred_ward:           _lastTriageResult ? (_lastTriageResult.recommended_ward || '') : '',
             assigned_doctor_username: doctor,
             patient_phone:            document.getElementById('p-phone').value.trim(),
             nok_phone:                document.getElementById('p-nok').value.trim(),
@@ -719,7 +791,7 @@
             age:                      ageRaw === '' ? 0 : (parseInt(ageRaw, 10) || 0),
             triage_priority:          document.getElementById('p-priority').value.trim(),
             admission_notes:          document.getElementById('symptoms-input').value.trim(),
-            ai_triage_summary:        _lastTriageResult ? (_lastTriageResult.ai_summary || '') : '',
+            ai_triage_summary:        _lastTriageResult ? stripWardTag(_lastTriageResult.ai_summary || '') : '',
           }),
         });
         const result = await res.json();
@@ -774,13 +846,14 @@
       // Clear char counter
       document.getElementById('char-count').textContent = '0 characters';
 
-      // Hide results, bed panel, success panels, fast-track result
+      // Hide results, bed panel, success panels, fast-track result, attachment
       document.getElementById('result-section').classList.remove('show');
       document.getElementById('admit-form').classList.add('hidden');
       document.getElementById('admit-success').classList.add('hidden');
       document.getElementById('bed-panel').classList.add('hidden');
       document.getElementById('gp-panel').classList.add('hidden');
       document.getElementById('fasttrack-result').classList.add('hidden');
+      _hideAttachmentBtn();
 
       // Fresh patient ID ready to go
       document.getElementById('admit-pid').value = generatePID();

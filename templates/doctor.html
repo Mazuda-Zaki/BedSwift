@@ -39,59 +39,34 @@
     .sidebar-link.active { background: #eff6ff; color: #2563eb; font-weight: 600; }
     .sidebar-link.active span { filter: none; }
 
-    /* ── Bed tiles (soft fills, shadow depth — no hard rings) ─────────────── */
-    .bed-tile {
-      width: 88px; min-height: 76px; border-radius: 12px; border: none;
-      padding: 8px 6px 6px; display: flex; flex-direction: column;
-      align-items: center; gap: 4px; transition: transform .12s, box-shadow .12s;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+    /* ── Excel-style beds table ─────────────────────────────────────────────── */
+    #beds-table-shell { display: none; }
+    #beds-table-shell.is-visible { display: block; }
+    .beds-excel-table { border-collapse: collapse; font-size: .8125rem; width: 100%; table-layout: fixed; }
+    .beds-excel-table thead {
+      background: #f8fafc; color: #64748b;
+      border-bottom: 2px solid #e2e8f0; text-transform: uppercase;
+      letter-spacing: .06em; font-size: .65rem; font-weight: 700;
     }
-    .bed-tile:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08); }
-    @media (max-width: 639px) {
-      .bed-tile { width: 80px; }
+    .beds-excel-table th { padding: 10px 12px; text-align: left; font-weight: 700; vertical-align: bottom; white-space: nowrap; }
+    .beds-excel-table th, .beds-excel-table td { border-right: 1px solid #e2e8f0; }
+    .beds-excel-table th:last-child, .beds-excel-table td:last-child { border-right: none; }
+    .beds-excel-table tbody tr.bed-row { cursor: pointer; }
+    .beds-excel-table tbody tr:nth-child(even) { background: #fafafa; }
+    .beds-excel-table tbody tr.bed-row:hover { background: #eff6ff; }
+    .beds-excel-table td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; vertical-align: middle;
+      color: #334155; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .beds-excel-table .col-bed { width: 8%; font-weight: 700; font-family: ui-monospace, monospace; color: #0f172a; }
+    .beds-excel-table .col-status select {
+      font-size: .72rem; font-weight: 600; border-radius: 6px; border: none; padding: 4px 6px;
+      background: #f1f5f9; color: #334155; cursor: pointer; width: 100%; max-width: 120px;
     }
-    .bed-tile .tile-id  { font-size: .72rem; font-weight: 700; text-align: center; }
-    .bed-tile .tile-dot { width: 5px; height: 5px; border-radius: 50%; }
-    .bed-tile select    { width: 100%; font-size: .63rem; font-weight: 600; border: none;
-                          border-radius: 6px; padding: 2px 1px; cursor: pointer; text-align: center; }
-    .bed-tile select:focus { outline: none; }
-    .bed-tile.occupied { background: #fff1f2; }
-    .bed-tile.occupied .tile-id  { color: #e11d48; }
-    .bed-tile.occupied .tile-dot { background: #f43f5e; }
-    .bed-tile.occupied select    { background: #ffe4e6; color: #9f1239; }
-    .bed-tile.clearing { background: #fffbeb; }
-    .bed-tile.clearing .tile-id  { color: #b45309; }
-    .bed-tile.clearing .tile-dot { background: #f59e0b; }
-    .bed-tile.clearing select    { background: #fef3c7; color: #92400e; }
-    .bed-tile.empty    { background: #ecfdf5; }
-    .bed-tile.empty    .tile-id  { color: #047857; }
-    .bed-tile.empty    .tile-dot { background: #34d399; }
-    .bed-tile.empty    select    { background: #d1fae5; color: #065f46; }
-
-    /* ── Ward accordion ─────────────────────────────────────────────────────── */
-    .ward-acc-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 20px; cursor: pointer; user-select: none;
-      background: #fff; border: none; border-radius: 14px;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 8px rgba(15, 23, 42, 0.04);
-      transition: background .12s, box-shadow .12s;
-    }
-    .ward-acc-header:hover  { background: #fafafa; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06); }
-    .ward-acc-header.open   { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-    .ward-acc-body {
-      background: #f8fafc; border: none;
-      border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
-      padding: 18px 20px; display: none;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-    }
-    .ward-acc-body.open { display: block; }
-
-    /* ── Status mini chips ──────────────────────────────────────────────────── */
-    .s-chip { font-size: .63rem; font-weight: 700; padding: 3px 8px;
-              border-radius: 999px; border: none; }
-    .s-chip.occ { background: #ffe4e6; color: #be123c; }
-    .s-chip.cln { background: #fef3c7; color: #b45309; }
-    .s-chip.fre { background: #d1fae5; color: #047857; }
+    .beds-excel-table .col-status select:focus { outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,.25); }
+    .bed-priority-chip { font-size: .65rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+    .bed-priority-chip.immediate { background: #ffe4e6; color: #be123c; }
+    .bed-priority-chip.urgent { background: #ffedd5; color: #c2410c; }
+    .bed-priority-chip.routine { background: #d1fae5; color: #047857; }
+    .bed-priority-chip.none { background: #f1f5f9; color: #94a3b8; font-weight: 600; }
 
     /* ── Toolbar inputs ─────────────────────────────────────────────────────── */
     .tb-input { font-size: .75rem; padding: 8px 12px; border: none;
@@ -107,6 +82,15 @@
     }
     .filter-pill:hover { background: #e2e8f0; color: #334155; }
     .filter-pill.active-pill { background: #0f172a; color: #fff; }
+
+    /* ── Patient detail modal ────────────────────────────────────────────────── */
+    @keyframes modal-in {
+      from { opacity: 0; transform: translate(-50%,-48%) scale(.97); }
+      to   { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+    }
+    #bed-modal-panel {
+      animation: modal-in .2s cubic-bezier(.16,1,.3,1) forwards;
+    }
 
     /* Scrollbar */
     ::-webkit-scrollbar { width: 5px; }
@@ -176,14 +160,14 @@
         {% if user.role in ('nurse', 'admin') %}
         <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
         {% endif %}
-        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
-        {% if user.role in ('doctor', 'admin') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
         {% endif %}
-        {% if user.role in ('doctor', 'admin', 'nurse') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
         {% endif %}
-        {% if user.role == 'admin' %}
+        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
+        {% if user.role|lower == 'admin' %}
         <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
         {% endif %}
       </div>
@@ -327,34 +311,45 @@
           <section id="beds-section" class="pb-10">
 
             <div class="bg-white rounded-xl shadow-md shadow-slate-200/40 p-5 mb-4">
-              <div class="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <div class="flex items-center gap-2.5">
-                  <p class="section-label">Bed management</p>
-                  <span id="beds-count" class="text-xs text-slate-500"></span>
-                </div>
-                <div class="flex items-center gap-3 text-xs">
-                  <button onclick="expandAll()"  class="text-slate-600 hover:text-slate-900 font-semibold transition-colors">Expand all</button>
-                  <span class="text-slate-200">·</span>
-                  <button onclick="collapseAll()" class="text-slate-500 hover:text-slate-800 font-semibold transition-colors">Collapse all</button>
-                </div>
+              <div class="flex items-center gap-2.5 mb-4">
+                <p class="section-label">Bed management</p>
+                <span id="beds-count" class="text-xs text-slate-500"></span>
               </div>
               <div class="flex flex-wrap items-center gap-3">
-                <input type="text" id="bed-search" placeholder="🔍  Search bed ID…"
-                  oninput="_renderBedAccordion()" class="tb-input w-full sm:w-40" />
-                <select id="ward-filter" onchange="_renderBedAccordion()" class="tb-input">
+                <input type="text" id="bed-search" placeholder="🔍  Search bed, patient, ward, or ID…"
+                  class="tb-input flex-1 min-w-[200px]" autocomplete="off" />
+                <select id="ward-filter" class="tb-input">
                   <option value="">All Wards</option>
                 </select>
                 <div class="flex items-center gap-1.5 flex-wrap">
-                  <button onclick="filterBeds('all')"      id="f-all"      class="filter-pill active-pill">All</button>
-                  <button onclick="filterBeds('Occupied')" id="f-Occupied" class="filter-pill">🔴 Occupied</button>
-                  <button onclick="filterBeds('Clearing')" id="f-Clearing" class="filter-pill">🟡 Cleaning</button>
-                  <button onclick="filterBeds('Empty')"    id="f-Empty"    class="filter-pill">🟢 Available</button>
+                  <button type="button" id="f-all"       class="filter-pill active-pill">All</button>
+                  <button type="button" id="f-Occupied"  class="filter-pill">🔴 Occupied</button>
+                  <button type="button" id="f-Clearing"  class="filter-pill">🟡 Cleaning</button>
+                  <button type="button" id="f-Empty"     class="filter-pill">🟢 Available</button>
                 </div>
               </div>
             </div>
 
-            <div id="beds-accordion" class="space-y-3">
-              <p class="text-slate-500 text-sm py-8 text-center">Loading beds…</p>
+            <!-- Hidden until user searches or filters ("Search-to-Reveal") -->
+            <div id="beds-table-shell" class="rounded-xl shadow-md shadow-slate-200/40 border border-slate-200 bg-white overflow-hidden">
+              <div id="beds-table-scroll" class="overflow-x-auto">
+                <table class="beds-excel-table" id="beds-excel-table" aria-describedby="beds-results-hint">
+                  <thead>
+                    <tr>
+                      <th class="col-bed">Bed ID</th>
+                      <th>Ward</th>
+                      <th>Patient Name</th>
+                      <th class="col-status">Status</th>
+                      <th>Priority</th>
+                    </tr>
+                  </thead>
+                  <tbody id="beds-table-body"></tbody>
+                </table>
+              </div>
+              <p id="beds-table-empty" class="hidden text-center py-14 text-sm text-slate-500 px-4">
+                No beds match your search or filters.
+              </p>
+              <p id="beds-results-hint" class="sr-only">Bed lookup results update as you filter.</p>
             </div>
 
           </section>
@@ -365,6 +360,62 @@
 
     </div>
   </main>
+
+  <!-- ═══════════  BED DETAIL MODAL  ═══════════ -->
+  <div id="bed-modal" class="fixed inset-0 z-50 hidden" aria-modal="true" role="dialog">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px]" onclick="closeBedModal()"></div>
+
+    <!-- Panel -->
+    <div id="bed-modal-panel"
+         class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
+                bg-white rounded-2xl w-[calc(100%-2rem)] max-w-lg
+                shadow-2xl shadow-slate-900/20 overflow-hidden">
+
+      <!-- Modal header -->
+      <div class="px-6 pt-6 pb-4 border-b border-slate-100">
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <!-- Bed ID + Priority row -->
+            <div class="flex items-center gap-2.5 mb-2 flex-wrap">
+              <div class="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-rose-100 font-bold text-rose-700 text-sm flex-shrink-0"
+                   id="modal-bed-id"></div>
+              <span class="w-2 h-2 rounded-full bg-rose-400 animate-pulse-dot block flex-shrink-0"></span>
+              <div id="modal-priority-badge"></div>
+            </div>
+            <!-- Patient name -->
+            <h2 id="modal-name" class="text-lg font-bold text-slate-900 leading-tight truncate"></h2>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-2 mb-0">Reference ID</p>
+            <p id="modal-pid" class="text-xs text-slate-600 font-mono mt-0.5"></p>
+          </div>
+          <!-- Close button -->
+          <button onclick="closeBedModal()"
+            class="flex-shrink-0 w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center
+                   justify-center text-slate-500 hover:text-slate-700 transition-colors text-sm font-semibold">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal body — AI summary -->
+      <div class="px-6 py-5">
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">AI Clinical Summary</p>
+        <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+          <p id="modal-summary"
+             class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap"></p>
+        </div>
+      </div>
+
+      <!-- Modal footer -->
+      <div class="px-6 pb-5">
+        <button onclick="closeBedModal()"
+          class="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold
+                 transition-colors shadow-md shadow-slate-900/10">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- ═══════════  TOAST  ═══════════ -->
   <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] hidden">
@@ -377,6 +428,61 @@
 
   <!-- ═══════════  JAVASCRIPT  ═══════════ -->
   <script>
+
+    // ── Triage priority badge ────────────────────────────────────────────────
+    function triageBadge(priority) {
+      const p = (priority || '').toLowerCase();
+      if (p === 'immediate') return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-100 text-rose-700"><span class="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0 block"></span>Immediate</span>`;
+      if (p === 'urgent')    return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-100 text-orange-700"><span class="w-1.5 h-1.5 rounded-full bg-orange-500 flex-shrink-0 block"></span>Urgent</span>`;
+      if (p === 'routine')   return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-700"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0 block"></span>Routine</span>`;
+      return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500">Not recorded</span>`;
+    }
+
+    function escapeHtml(text) {
+      if (text == null) return '';
+      const d = document.createElement('div');
+      d.textContent = String(text);
+      return d.innerHTML;
+    }
+
+    // ── Bed detail modal ─────────────────────────────────────────────────────
+    function openBedModal(bedId) {
+      const bed = _allBeds.find(b => b.bed_id === bedId);
+      if (!bed) return;
+
+      document.getElementById('modal-bed-id').textContent = bedId;
+      if (bed.patient) {
+        const pt = bed.patient;
+        document.getElementById('modal-name').textContent          = pt.name || 'Not recorded';
+        document.getElementById('modal-pid').textContent           = pt.patient_id || 'Not recorded';
+        document.getElementById('modal-priority-badge').innerHTML  = triageBadge(pt.triage_priority);
+        document.getElementById('modal-summary').textContent       = pt.ai_triage_summary || 'Not recorded.';
+      } else {
+        const sub = `${bed.ward} ward · Bed ${bed.bed_id}`;
+        document.getElementById('modal-name').textContent =
+          bed.status === 'Occupied' ? 'No linked patient record' : 'No patient assigned';
+        document.getElementById('modal-pid').textContent = sub;
+        document.getElementById('modal-priority-badge').innerHTML  = triageBadge('');
+        document.getElementById('modal-summary').textContent =
+          'No AI clinical summary is available for this bed yet. If the bed is occupied, reconcile the admission in the EMR or ED handoff workflow.';
+      }
+
+      document.getElementById('bed-modal').classList.remove('hidden');
+      // Re-trigger animation each open
+      const panel = document.getElementById('bed-modal-panel');
+      panel.style.animation = 'none';
+      panel.offsetHeight; // reflow
+      panel.style.animation = '';
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeBedModal() {
+      document.getElementById('bed-modal').classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeBedModal(); });
 
     // ── Status badge helper ──────────────────────────────────────────────────
     function statusBadge(status) {
@@ -457,148 +563,128 @@
       document.getElementById('stat-clearing').textContent  = stats.clearing;
     }
 
-    // ── Bed accordion ─────────────────────────────────────────────────────────
-    let _allBeds     = [];
-    let _activeFilter = 'all';
-    let _wardExpanded = {};   // { wardName: true|false }
+    // ── Bed lookup ("Search-to-Reveal") ────────────────────────────────────────
+    let _allBeds       = [];
+    let _activeFilter  = 'all';
 
-    function _wardId(ward) {
-      return ward.replace(/[^a-zA-Z0-9]/g, '_');
+    /** True when anything other than defaults is chosen — toggles Excel table visibility. */
+    function _lookupRevealActive() {
+      const q = (document.getElementById('bed-search').value || '').trim();
+      const ward = document.getElementById('ward-filter').value;
+      return q.length > 0 || ward !== '' || _activeFilter !== 'all';
     }
 
     function renderBeds(beds) {
       _allBeds = beds;
-      // Populate ward dropdown
       const wards = [...new Set(beds.map(b => b.ward))].sort();
-      const sel   = document.getElementById('ward-filter');
-      const prev  = sel.value;
+      const sel = document.getElementById('ward-filter');
+      const prev = sel.value;
       sel.innerHTML = '<option value="">All Wards</option>' +
-        wards.map(w => `<option value="${w}"${w === prev ? ' selected' : ''}>${w}</option>`).join('');
-      // Default all wards collapsed on first load
-      wards.forEach(w => { if (_wardExpanded[w] === undefined) _wardExpanded[w] = false; });
-      document.getElementById('beds-count').textContent = `${beds.length} beds`;
-      _renderBedAccordion();
+        wards.map(w => `<option value="${escapeHtml(w)}"${w === prev ? ' selected' : ''}>${escapeHtml(w)}</option>`).join('');
+      document.getElementById('beds-count').textContent = `(${beds.length} beds)`;
+      _renderBedsLookupTable();
     }
 
     function filterBeds(f) {
       _activeFilter = f;
-      document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active-pill'));
-      document.getElementById('f-' + f).classList.add('active-pill');
-      _renderBedAccordion();
+      document.querySelectorAll('.filter-pill').forEach(btn => btn.classList.remove('active-pill'));
+      const pill = document.getElementById('f-' + f);
+      if (pill) pill.classList.add('active-pill');
+      _renderBedsLookupTable();
     }
 
-    function expandAll() {
-      Object.keys(_wardExpanded).forEach(w => _wardExpanded[w] = true);
-      _renderBedAccordion();
+    function _statusDropdown(b) {
+      const jid = JSON.stringify(b.bed_id);
+      return `<select onchange="updateBedStatus(${jid}, this.value)" title="Update bed status"
+        onclick="event.stopPropagation()"><option value="Occupied"${b.status === 'Occupied' ? ' selected' : ''}>Occupied</option><option value="Clearing"${b.status === 'Clearing' ? ' selected' : ''}>Cleaning</option><option value="Empty"${b.status === 'Empty' ? ' selected' : ''}>Available</option></select>`;
     }
 
-    function collapseAll() {
-      Object.keys(_wardExpanded).forEach(w => _wardExpanded[w] = false);
-      _renderBedAccordion();
+    function _priorityCell(b) {
+      const p = ((b.patient && b.patient.triage_priority) || '').toLowerCase();
+      let cls = 'none';
+      if (p === 'immediate') cls = 'immediate';
+      else if (p === 'urgent') cls = 'urgent';
+      else if (p === 'routine') cls = 'routine';
+      const label = p ? p.charAt(0).toUpperCase() + p.slice(1) : 'Not recorded';
+      return `<span class="bed-priority-chip ${cls}">${escapeHtml(label)}</span>`;
     }
 
-    function toggleWard(ward) {
-      _wardExpanded[ward] = !_wardExpanded[ward];
-      const id    = _wardId(ward);
-      const body  = document.getElementById('acc-body-' + id);
-      const chev  = document.getElementById('acc-chev-' + id);
-      const hdr   = document.getElementById('acc-hdr-'  + id);
-      if (_wardExpanded[ward]) {
-        body.classList.add('open');
-        hdr.classList.add('open');
-        chev.textContent = '▼';
-      } else {
-        body.classList.remove('open');
-        hdr.classList.remove('open');
-        chev.textContent = '▶';
-      }
-    }
+    function _renderBedsLookupTable() {
+      const shell  = document.getElementById('beds-table-shell');
+      const tbody  = document.getElementById('beds-table-body');
+      const table  = document.getElementById('beds-excel-table');
+      const scroll = document.getElementById('beds-table-scroll');
+      const empty  = document.getElementById('beds-table-empty');
 
-    function _renderBedAccordion() {
-      const acc       = document.getElementById('beds-accordion');
-      const searchVal = (document.getElementById('bed-search').value || '').toLowerCase().trim();
-      const wardVal   = document.getElementById('ward-filter').value;
-
-      let filtered = _allBeds;
-      if (_activeFilter !== 'all') filtered = filtered.filter(b => b.status === _activeFilter);
-      if (wardVal)   filtered = filtered.filter(b => b.ward === wardVal);
-      if (searchVal) filtered = filtered.filter(b => b.bed_id.toLowerCase().includes(searchVal));
-
-      if (filtered.length === 0) {
-        acc.innerHTML = `<div class="bg-white rounded-xl px-8 py-12 text-center shadow-md shadow-slate-200/40">
-          <p class="text-2xl mb-3 opacity-80">🔍</p>
-          <p class="text-slate-600 font-medium text-sm">No beds match the current filters.</p>
-        </div>`;
+      const reveal = _lookupRevealActive();
+      if (!reveal) {
+        shell.classList.remove('is-visible');
+        tbody.innerHTML = '';
+        empty.classList.add('hidden');
+        scroll.classList.remove('hidden');
+        table.classList.remove('hidden');
         return;
       }
 
-      // Group by ward
-      const byWard = {};
-      filtered.forEach(b => { (byWard[b.ward] = byWard[b.ward] || []).push(b); });
+      shell.classList.add('is-visible');
 
-      acc.innerHTML = Object.entries(byWard).map(([ward, wbeds]) => {
-        const id    = _wardId(ward);
-        const isOpen = _wardExpanded[ward] !== false;
+      const q = (document.getElementById('bed-search').value || '').toLowerCase().trim();
+      const wardVal = document.getElementById('ward-filter').value;
 
-        // Counts from filtered beds (for chips)
-        const occ = wbeds.filter(b => b.status === 'Occupied').length;
-        const clr = wbeds.filter(b => b.status === 'Clearing').length;
-        const emp = wbeds.filter(b => b.status === 'Empty').length;
+      let filtered = _allBeds.slice();
+      if (_activeFilter !== 'all') filtered = filtered.filter(b => b.status === _activeFilter);
+      if (wardVal) filtered = filtered.filter(b => b.ward === wardVal);
+      if (q) {
+        filtered = filtered.filter(b => {
+          const pt = b.patient;
+          const blob = [
+            b.bed_id,
+            b.ward,
+            pt && pt.name,
+            pt && pt.patient_id,
+          ].filter(Boolean).join(' ').toLowerCase();
+          return blob.includes(q);
+        });
+      }
 
-        // Occupancy % always uses full ward data (not filtered)
-        const wardAll   = _allBeds.filter(b => b.ward === ward);
-        const wardTotal = wardAll.length;
-        const wardOcc   = wardAll.filter(b => b.status === 'Occupied').length;
-        const wardClr   = wardAll.filter(b => b.status === 'Clearing').length;
-        const pct      = wardTotal ? Math.round((wardOcc + wardClr) / wardTotal * 100) : 0;
-        const barClr   = pct >= 90 ? '#f43f5e' : pct >= 80 ? '#fb7185' : pct >= 60 ? '#fbbf24' : '#34d399';
-        const pctClr   = pct >= 90 ? '#be123c' : pct >= 80 ? '#e11d48' : pct >= 60 ? '#b45309' : '#047857';
+      if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        table.classList.add('hidden');
+        scroll.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+      }
 
-        const tiles = wbeds.map(b => {
-          const cls = b.status === 'Occupied' ? 'occupied' : b.status === 'Clearing' ? 'clearing' : 'empty';
-          return `<div class="bed-tile ${cls}">
-            <div class="tile-id">${b.bed_id}</div>
-            <div class="tile-dot"></div>
-            <select onchange="updateBedStatus('${b.bed_id}', this.value)" title="Update ${b.bed_id}">
-              <option value="Occupied"${b.status === 'Occupied' ? ' selected' : ''}>🔴 Occupied</option>
-              <option value="Clearing"${b.status === 'Clearing' ? ' selected' : ''}>🟡 Cleaning</option>
-              <option value="Empty"${b.status === 'Empty'    ? ' selected' : ''}>🟢 Available</option>
-            </select>
-          </div>`;
-        }).join('');
+      empty.classList.add('hidden');
+      scroll.classList.remove('hidden');
+      table.classList.remove('hidden');
 
-        const alertBadge = pct >= 80
-          ? `<span class="ml-1 text-xs font-bold text-rose-500">⚠️</span>` : '';
-
-        return `<div>
-          <div id="acc-hdr-${id}" class="ward-acc-header${isOpen ? ' open' : ''}"
-               onclick="toggleWard('${ward.replace(/'/g, "\\'")}')">
-            <div class="flex items-center gap-2.5 flex-1 min-w-0 flex-wrap">
-              <span id="acc-chev-${id}" class="text-slate-400 text-xs w-3 flex-shrink-0">${isOpen ? '▼' : '▶'}</span>
-              <span class="font-semibold text-slate-900 text-sm tracking-tight">${ward}${alertBadge}</span>
-              <div class="flex items-center gap-1.5 flex-wrap">
-                ${occ > 0 ? `<span class="s-chip occ">${occ} occ</span>` : ''}
-                ${clr > 0 ? `<span class="s-chip cln">${clr} clean</span>` : ''}
-                ${emp > 0 ? `<span class="s-chip fre">${emp} free</span>` : ''}
-              </div>
-            </div>
-            <div class="flex items-center gap-3 flex-shrink-0 ml-4">
-              <div class="flex items-center gap-2">
-                <div class="w-24 bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div class="h-2 rounded-full transition-all duration-700"
-                       style="width:${pct}%;background:${barClr}"></div>
-                </div>
-                <span class="text-xs font-bold tabular-nums w-9 text-right" style="color:${pctClr}">${pct}%</span>
-              </div>
-              <span class="text-xs text-slate-500 w-12 text-right">${wardTotal} beds</span>
-            </div>
-          </div>
-          <div id="acc-body-${id}" class="ward-acc-body${isOpen ? ' open' : ''}">
-            <div class="flex flex-wrap gap-3">${tiles}</div>
-          </div>
-        </div>`;
+      tbody.innerHTML = filtered.map(b => {
+        const pt = b.patient;
+        const pname = pt && pt.name ? pt.name : 'Not recorded';
+        const bid = escapeHtml(b.bed_id);
+        return `<tr class="bed-row" data-bed-id="${bid}" title="Click to view AI clinical summary">
+          <td class="col-bed">${bid}</td>
+          <td>${escapeHtml(b.ward)}</td>
+          <td>${escapeHtml(pname)}</td>
+          <td class="col-status" onclick="event.stopPropagation()">${_statusDropdown(b)}</td>
+          <td>${_priorityCell(b)}</td>
+        </tr>`;
       }).join('');
     }
+
+    /** Row clicks open the modal; status dropdown stops propagation inline. */
+    document.getElementById('beds-table-body').addEventListener('click', function(ev) {
+      if (ev.target.closest('.col-status')) return;
+      const tr = ev.target.closest('tr.bed-row[data-bed-id]');
+      if (tr) openBedModal(tr.getAttribute('data-bed-id'));
+    });
+
+    document.getElementById('bed-search').addEventListener('input', _renderBedsLookupTable);
+    document.getElementById('ward-filter').addEventListener('change', _renderBedsLookupTable);
+    [['all','f-all'],['Occupied','f-Occupied'],['Clearing','f-Clearing'],['Empty','f-Empty']].forEach(([v, domId]) => {
+      document.getElementById(domId).addEventListener('click', () => filterBeds(v));
+    });
 
     // ── Update bed status live ────────────────────────────────────────────────
     async function updateBedStatus(bedId, newStatus) {

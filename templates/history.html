@@ -80,13 +80,13 @@
         {% if user.role in ('nurse', 'admin') %}
         <a href="/" class="sidebar-link {{ 'active' if request.url.path == '/' else '' }}"><span>🩺</span> ED Triage</a>
         {% endif %}
-        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
-        {% if user.role in ('doctor', 'admin') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/discharge-portal" class="sidebar-link {{ 'active' if request.url.path == '/discharge-portal' else '' }}"><span>📋</span> Discharge Assistant</a>
         {% endif %}
-        {% if user.role in ('doctor', 'admin', 'nurse') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/history" class="sidebar-link {{ 'active' if request.url.path == '/history' else '' }}"><span>🗂</span> Discharge Records</a>
         {% endif %}
+        <a href="/ward" class="sidebar-link {{ 'active' if request.url.path == '/ward' else '' }}"><span>📊</span> Ward Dashboard</a>
         {% if user.role in ('pharmacy', 'admin') %}
         <a href="/pharmacy" class="sidebar-link {{ 'active' if request.url.path == '/pharmacy' else '' }}"><span>💊</span> Pharmacy Dashboard</a>
         {% endif %}
@@ -121,7 +121,7 @@
           class="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm ring-1 ring-slate-200/60 transition-colors">
           <span id="refresh-icon">🔄</span> <span class="hidden sm:inline">Refresh</span>
         </button>
-        {% if user.role in ('doctor', 'admin') %}
+        {% if user.role|lower in ['doctor', 'admin'] %}
         <a href="/discharge-portal"
           class="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md transition-colors">
           + New Discharge

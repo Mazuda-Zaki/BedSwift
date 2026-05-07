@@ -210,16 +210,35 @@
 
         <div>
           <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-            Describe your symptoms <span class="text-rose-400">*</span>
+            Describe your symptoms <span class="text-slate-400 normal-case font-normal">(optional if attaching a file)</span>
           </label>
           <textarea id="symptoms-input" rows="5"
             placeholder="e.g. I have had severe stomach pain for the past 6 hours, mainly on the lower right side. The pain is constant and gets worse when I move. I also feel nauseous and have a mild fever..."
             class="p-input resize-none leading-relaxed"
-            oninput="clearFieldError('symptom-error'); updateCharCount()"></textarea>
+            oninput="clearFieldError('symptom-error'); updateCharCount(); _syncAnalyzeLabel()"></textarea>
           <div class="flex items-center justify-between mt-1.5">
             <p id="symptom-error" class="text-rose-500 text-xs hidden">Please describe your symptoms first.</p>
             <p id="char-count" class="text-xs text-slate-400 ml-auto">0 characters</p>
           </div>
+        </div>
+
+        <!-- Supporting document upload (lives here so it persists across edits) -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            Attach Supporting Document <span class="text-slate-400 normal-case font-normal">(optional)</span>
+          </label>
+          <label id="file-label"
+            class="flex items-center gap-3 cursor-pointer border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-2xl px-4 py-3.5 transition-colors group">
+            <span class="text-2xl">📎</span>
+            <div class="flex-1 min-w-0">
+              <p id="file-name-display" class="text-sm text-slate-500 group-hover:text-indigo-600 transition-colors truncate">
+                Photo of wound, lab result, or referral letter…
+              </p>
+              <p class="text-xs text-slate-400 mt-0.5">JPG · PNG · PDF · up to 10 MB</p>
+            </div>
+            <input id="p-file-upload" type="file" accept="image/*,application/pdf"
+              class="sr-only" onchange="updateFileName()" />
+          </label>
         </div>
 
         <button id="analyze-btn" class="btn-primary" onclick="analyzeSymptoms()">
@@ -327,8 +346,11 @@
             <p class="text-xs text-center text-slate-400">The hospital will be alerted and a bed will be prepared for your arrival.</p>
           </div>
 
+          <!-- Edit symptoms — routes back to Screen 1 with all data preserved -->
+          <button class="btn-secondary" onclick="editSymptoms()">✏️ &nbsp;Edit Symptoms</button>
+
           <!-- Start over -->
-          <button class="btn-secondary" onclick="startOver()">← Start a new assessment</button>
+          <button class="btn-secondary" onclick="startOver()" style="background:#fee2e2;color:#b91c1c;">← Start a new assessment</button>
         </div>
 
         <!-- Success state — shown after notifying hospital -->
@@ -417,6 +439,20 @@
       showScreen(step);
     }
 
+    // ── Return to symptom screen, keeping all typed data intact ──────────────
+    function editSymptoms() {
+      // Sync the char counter to whatever is still in the textarea
+      updateCharCount();
+      setStep(1);
+      showScreen(1);
+      // Place cursor at the end of existing text so user can naturally append
+      const ta = document.getElementById('symptoms-input');
+      setTimeout(() => {
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }, 350);
+    }
+
     // ── Screen 0 → 1 ────────────────────────────────────────────────────────
     function goToSymptoms() {
       const ic = document.getElementById('p-ic').value.trim();
@@ -463,26 +499,33 @@
 
     // ── Screen 1 → 2: Call real /api/triage ──────────────────────────────────
     async function analyzeSymptoms() {
-      const symptoms = document.getElementById('symptoms-input').value.trim();
-      if (!symptoms) {
-        document.getElementById('symptom-error').classList.remove('hidden');
+      const symptoms  = document.getElementById('symptoms-input').value.trim();
+      const fileInput = document.getElementById('p-file-upload');
+      const hasFile   = !!(fileInput && fileInput.files && fileInput.files[0]);
+      const hasText   = symptoms.length > 0;
+
+      // Allow submission if EITHER text or file is present
+      const errEl = document.getElementById('symptom-error');
+      if (!hasText && !hasFile) {
+        errEl.textContent = 'Please describe your symptoms or attach a document.';
+        errEl.classList.remove('hidden');
         document.getElementById('symptoms-input').focus();
         return;
       }
+      errEl.classList.add('hidden');
 
       setAnalyzeLoading(true);
-      document.getElementById('ic-error').classList.add('hidden');
 
       try {
-        const res  = await fetch('/api/triage', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ symptoms }),
-        });
+        // Use FormData so files (images, PDFs) can travel alongside the text
+        const fd = new FormData();
+        fd.append('symptoms', symptoms);
+        if (hasFile) fd.append('image', fileInput.files[0]);
+
+        const res  = await fetch('/api/triage', { method: 'POST', body: fd });
         const data = await res.json();
         renderResult(data);
       } catch (err) {
-        // Fallback graceful degradation
         renderResult({
           admission_required: false,
           ai_summary: `Unable to reach the triage service right now. Please proceed to the hospital directly or call 999 if this is an emergency. (${err.message})`,
@@ -491,12 +534,18 @@
         });
       } finally {
         setAnalyzeLoading(false);
+        // Always restore the default button label
+        document.getElementById('analyze-label').innerHTML = '🔍 &nbsp;Analyze My Symptoms';
       }
     }
 
     // ── Render AI result ──────────────────────────────────────────────────────
     function renderResult(data) {
-      const urgent = data.admission_required;
+      // Defensive: if the backend returned an error shape instead of a TriageResponse,
+      // degrade gracefully rather than crashing on undefined properties.
+      const rawSummary = data.ai_summary || data.detail || data.error ||
+        'Assessment unavailable. Please proceed to the hospital or call 999 if this is an emergency.';
+      const urgent = !!data.admission_required;
 
       // Headline + severity pill
       document.getElementById('result-headline').textContent =
@@ -508,8 +557,10 @@
         (urgent ? 'pill-urgent' : 'pill-gp');
 
       // Strip the first line ("ADMISSION REQUIRED / NOT REQUIRED") from display
-      const lines   = data.ai_summary.split('\n');
-      const summary = lines.slice(1).join('\n').trim() || data.ai_summary;
+      const lines   = rawSummary.split('\n');
+      const summary = (lines.slice(1).join('\n').trim() || rawSummary)
+        .replace(/\n?\s*RECOMMENDED_WARD:\s*(ICU|Medical|Surgical|Orthopaedic|Paediatric|Obstetrics\s*&\s*Gynaecology)\s*$/i, '')
+        .trim();
       document.getElementById('ai-summary').textContent = summary;
 
       // Bed availability
@@ -546,6 +597,32 @@
       showScreen(2);
     }
 
+    // ── File name display + analyze button label sync ────────────────────────
+    function _syncAnalyzeLabel() {
+      const hasText = document.getElementById('symptoms-input').value.trim().length > 0;
+      const hasFile = !!(document.getElementById('p-file-upload').files &&
+                         document.getElementById('p-file-upload').files[0]);
+      document.getElementById('analyze-label').innerHTML =
+        (!hasText && hasFile)
+          ? '📎 &nbsp;Analyze Attachment &amp; Triage'
+          : '🔍 &nbsp;Analyze My Symptoms';
+    }
+
+    function updateFileName() {
+      const input = document.getElementById('p-file-upload');
+      const label = document.getElementById('file-name-display');
+      if (input.files && input.files[0]) {
+        label.textContent = input.files[0].name;
+        label.classList.add('text-indigo-700', 'font-medium');
+        label.classList.remove('text-slate-500');
+      } else {
+        label.textContent = 'Photo of wound, lab result, or referral letter…';
+        label.classList.remove('text-indigo-700', 'font-medium');
+        label.classList.add('text-slate-500');
+      }
+      _syncAnalyzeLabel();
+    }
+
     // ── Notify Hospital ───────────────────────────────────────────────────────
     async function notifyHospital() {
       const btn = document.getElementById('admit-cta').querySelector('button');
@@ -553,25 +630,43 @@
       document.getElementById('notify-label').classList.add('hidden');
       document.getElementById('notify-spinner').classList.remove('hidden');
 
-      const refId = 'REF-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-
       try {
-        await fetch('/api/pre-arrival', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ref_id:             refId,
-            patient_name:       _patientName !== 'Patient' ? _patientName : '',
-            ic_number:          _patientIC,
-            patient_phone:      _patientPhone,
-            symptoms:           document.getElementById('symptoms-input').value.trim(),
-            ai_summary:         _lastTriageData ? (_lastTriageData.ai_summary || '') : '',
-            admission_required: _lastTriageData ? !!_lastTriageData.admission_required : false,
-            available_beds:     _lastTriageData ? (_lastTriageData.available_beds ?? null) : null,
-          }),
-        });
-      } catch (_) {
-        // Silently continue — ref ID still shown to patient
+        // Build multipart form so we can include the optional file attachment
+        const fd = new FormData();
+        fd.append('patient_name',       _patientName !== 'Patient' ? _patientName : '');
+        fd.append('ic_number',          _patientIC);
+        fd.append('patient_phone',      _patientPhone);
+        fd.append('symptoms',           document.getElementById('symptoms-input').value.trim());
+        // Strip the "ADMISSION REQUIRED / NOT REQUIRED" status line from the AI output
+        // so the nurse's Chief Complaint field receives clean clinical prose only.
+        const _rawAi    = _lastTriageData ? (_lastTriageData.ai_summary || '') : '';
+        const _aiLines  = _rawAi.split('\n');
+        const _cleanAi  = (_aiLines.length > 1 ? _aiLines.slice(1).join('\n').trim() : _rawAi)
+          .replace(/\n?\s*RECOMMENDED_WARD:\s*(ICU|Medical|Surgical|Orthopaedic|Paediatric|Obstetrics\s*&\s*Gynaecology)\s*$/i, '')
+          .trim();
+        fd.append('ai_summary',         _cleanAi);
+        fd.append('admission_required', _lastTriageData ? String(!!_lastTriageData.admission_required) : 'false');
+        fd.append('available_beds',     _lastTriageData ? String(_lastTriageData.available_beds ?? '') : '');
+
+        const fileInput = document.getElementById('p-file-upload');
+        if (fileInput && fileInput.files[0]) {
+          fd.append('attachment', fileInput.files[0]);
+        }
+
+        const saveRes = await fetch('/api/pre-arrival', { method: 'POST', body: fd });
+        const saveData = await saveRes.json().catch(() => ({}));
+        if (!saveRes.ok) {
+          console.error('[BedSwift] pre-arrival save failed:', saveRes.status, saveData);
+          return;
+        }
+
+        const refId = saveData.ref_id || 'Not recorded';
+        document.getElementById('reference-id').textContent = refId;
+        document.getElementById('cta-buttons').classList.add('hidden');
+        document.getElementById('success-state').classList.remove('hidden');
+        document.getElementById('success-state').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (netErr) {
+        console.error('[BedSwift] pre-arrival network error:', netErr);
       } finally {
         // Always restore button so it is never permanently stuck
         btn.disabled = false;
@@ -579,10 +674,6 @@
         document.getElementById('notify-spinner').classList.add('hidden');
       }
 
-      document.getElementById('reference-id').textContent = refId;
-      document.getElementById('cta-buttons').classList.add('hidden');
-      document.getElementById('success-state').classList.remove('hidden');
-      document.getElementById('success-state').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     // ── Start over ────────────────────────────────────────────────────────────
@@ -599,6 +690,10 @@
       if (btn) btn.disabled = false;
       document.getElementById('notify-label').classList.remove('hidden');
       document.getElementById('notify-spinner').classList.add('hidden');
+      // Reset file upload
+      const fileInput = document.getElementById('p-file-upload');
+      if (fileInput) fileInput.value = '';
+      updateFileName();
       _lastTriageData = null;
       setStep(0);
       showScreen(0);
