@@ -171,36 +171,36 @@ class User(Base):
 
 DEFAULT_BEDS = [
     # ── Surgical Ward (6 beds) ──────────────────────────────────────────────
-    {"bed_id": "S1",   "ward": "Surgical",                  "status": "Occupied"},
-    {"bed_id": "S2",   "ward": "Surgical",                  "status": "Occupied"},
-    {"bed_id": "S3",   "ward": "Surgical",                  "status": "Occupied"},
-    {"bed_id": "S4",   "ward": "Surgical",                  "status": "Occupied"},
-    {"bed_id": "S5",   "ward": "Surgical",                  "status": "Occupied"},
-    {"bed_id": "S6",   "ward": "Surgical",                  "status": "Clearing"},
+    {"bed_id": "S1",   "ward": "Surgical",                  "status": "Empty"},
+    {"bed_id": "S2",   "ward": "Surgical",                  "status": "Empty"},
+    {"bed_id": "S3",   "ward": "Surgical",                  "status": "Empty"},
+    {"bed_id": "S4",   "ward": "Surgical",                  "status": "Empty"},
+    {"bed_id": "S5",   "ward": "Surgical",                  "status": "Empty"},
+    {"bed_id": "S6",   "ward": "Surgical",                  "status": "Empty"},
     # ── Medical Ward (6 beds) ───────────────────────────────────────────────
-    {"bed_id": "M1",   "ward": "Medical",                   "status": "Occupied"},
-    {"bed_id": "M2",   "ward": "Medical",                   "status": "Occupied"},
-    {"bed_id": "M3",   "ward": "Medical",                   "status": "Occupied"},
-    {"bed_id": "M4",   "ward": "Medical",                   "status": "Occupied"},
-    {"bed_id": "M5",   "ward": "Medical",                   "status": "Occupied"},
+    {"bed_id": "M1",   "ward": "Medical",                   "status": "Empty"},
+    {"bed_id": "M2",   "ward": "Medical",                   "status": "Empty"},
+    {"bed_id": "M3",   "ward": "Medical",                   "status": "Empty"},
+    {"bed_id": "M4",   "ward": "Medical",                   "status": "Empty"},
+    {"bed_id": "M5",   "ward": "Medical",                   "status": "Empty"},
     {"bed_id": "M6",   "ward": "Medical",                   "status": "Empty"},
     # ── Orthopaedic Ward (4 beds) ───────────────────────────────────────────
-    {"bed_id": "O1",   "ward": "Orthopaedic",               "status": "Occupied"},
-    {"bed_id": "O2",   "ward": "Orthopaedic",               "status": "Occupied"},
-    {"bed_id": "O3",   "ward": "Orthopaedic",               "status": "Occupied"},
+    {"bed_id": "O1",   "ward": "Orthopaedic",               "status": "Empty"},
+    {"bed_id": "O2",   "ward": "Orthopaedic",               "status": "Empty"},
+    {"bed_id": "O3",   "ward": "Orthopaedic",               "status": "Empty"},
     {"bed_id": "O4",   "ward": "Orthopaedic",               "status": "Empty"},
     # ── Paediatric Ward (4 beds) ─────────────────────────────────────────────
-    {"bed_id": "P1",   "ward": "Paediatric",                "status": "Occupied"},
-    {"bed_id": "P2",   "ward": "Paediatric",                "status": "Occupied"},
-    {"bed_id": "P3",   "ward": "Paediatric",                "status": "Occupied"},
+    {"bed_id": "P1",   "ward": "Paediatric",                "status": "Empty"},
+    {"bed_id": "P2",   "ward": "Paediatric",                "status": "Empty"},
+    {"bed_id": "P3",   "ward": "Paediatric",                "status": "Empty"},
     {"bed_id": "P4",   "ward": "Paediatric",                "status": "Empty"},
     # ── ICU (3 beds) ────────────────────────────────────────────────────────
-    {"bed_id": "ICU1", "ward": "ICU",                       "status": "Occupied"},
-    {"bed_id": "ICU2", "ward": "ICU",                       "status": "Occupied"},
-    {"bed_id": "ICU3", "ward": "ICU",                       "status": "Occupied"},
+    {"bed_id": "ICU1", "ward": "ICU",                       "status": "Empty"},
+    {"bed_id": "ICU2", "ward": "ICU",                       "status": "Empty"},
+    {"bed_id": "ICU3", "ward": "ICU",                       "status": "Empty"},
     # ── Obstetrics & Gynaecology (3 beds) ──────────────────────────────────
-    {"bed_id": "OG1",  "ward": "Obstetrics & Gynaecology",  "status": "Occupied"},
-    {"bed_id": "OG2",  "ward": "Obstetrics & Gynaecology",  "status": "Occupied"},
+    {"bed_id": "OG1",  "ward": "Obstetrics & Gynaecology",  "status": "Empty"},
+    {"bed_id": "OG2",  "ward": "Obstetrics & Gynaecology",  "status": "Empty"},
     {"bed_id": "OG3",  "ward": "Obstetrics & Gynaecology",  "status": "Empty"},
 ]
 
